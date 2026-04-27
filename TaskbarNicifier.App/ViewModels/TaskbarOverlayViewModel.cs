@@ -61,6 +61,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand ExitCommand { get; }
     public RelayCommand HideAppCommand { get; }
     public RelayCommand UnhideAppCommand { get; }
+    public RelayCommand UnhideGroupCommand { get; }
     public RelayCommand OpenGroupSettingsCommand { get; }
     public RelayCommand CloseGroupSettingsCommand { get; }
     public RelayCommand PickEditingGroupColorCommand { get; }
@@ -81,6 +82,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ExitCommand = new RelayCommand(_ => ExitApplication());
         HideAppCommand = new RelayCommand(p => HideApp(p));
         UnhideAppCommand = new RelayCommand(p => UnhideApp(p));
+        UnhideGroupCommand = new RelayCommand(p => UnhideGroup(p));
         OpenGroupSettingsCommand = new RelayCommand(p => OpenGroupSettings(p));
         CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
         PickEditingGroupColorCommand = new RelayCommand(_ => PickEditingGroupColor());
@@ -440,7 +442,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     parentGroupId: ug.Id));
             }
 
-            StripGroups.Add(new UserGroupViewModel(ug, slots, CreateGroupBackgroundBrush(ug.Color)));
+            StripGroups.Add(new UserGroupViewModel(
+                ug,
+                slots,
+                CreateGroupBackgroundBrush(ug.Color),
+                string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal)));
         }
     }
 
@@ -775,6 +781,42 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         GroupingOrderOperations.MoveAppKeyToGroupAtIndex(gs, slot.AppKey, target.Id, target.OrderedAppKeys.Count);
         BumpGroupingAndRebuild();
+    }
+
+    private void UnhideGroup(object? parameter)
+    {
+        if (parameter is not UserGroupViewModel groupVm)
+            return;
+
+        var gs = _settings.Grouping;
+        if (!string.Equals(groupVm.Settings.Id, gs.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        foreach (var slot in groupVm.Slots.ToList())
+            MoveHiddenAppToRememberedGroup(slot);
+
+        BumpGroupingAndRebuild();
+    }
+
+    private void MoveHiddenAppToRememberedGroup(AppSlotViewModel slot)
+    {
+        var gs = _settings.Grouping;
+        var targetId = gs.DefaultGroupId;
+        if (gs.LastNonHiddenGroupByAppKey.TryGetValue(slot.AppKey, out var remembered))
+        {
+            if (GroupingSettingsBootstrap.FindGroup(gs, remembered) is not null &&
+                !string.Equals(remembered, gs.HiddenGroupId, StringComparison.Ordinal))
+            {
+                targetId = remembered;
+            }
+        }
+
+        var target = GroupingSettingsBootstrap.FindGroup(gs, targetId) ??
+                     GroupingSettingsBootstrap.FindGroup(gs, gs.DefaultGroupId);
+        if (target is null)
+            return;
+
+        GroupingOrderOperations.MoveAppKeyToGroupAtIndex(gs, slot.AppKey, target.Id, target.OrderedAppKeys.Count);
     }
 
     private void OpenGroupSettings(object? parameter)

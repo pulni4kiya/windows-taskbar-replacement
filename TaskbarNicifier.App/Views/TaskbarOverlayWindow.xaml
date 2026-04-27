@@ -90,14 +90,14 @@
                                         <Button.ContextMenu>
                                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                 <MenuItem Header="Hide"
-                                                          Command="{Binding DataContext.HideAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          Command="{Binding DataContext.HideAppCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding}" />
                                                 <MenuItem Header="Unhide"
-                                                          Command="{Binding DataContext.UnhideAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          Command="{Binding DataContext.UnhideAppCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding}" />
                                                 <Separator />
                                                 <MenuItem Header="Group settings…"
-                                                          Command="{Binding DataContext.OpenGroupSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding ParentGroupId}" />
                                             </ContextMenu>
                                         </Button.ContextMenu>
@@ -153,8 +153,23 @@
                         </Button.CommandParameter>
                         <Button.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="Unhide all"
+                                          Command="{Binding DataContext.UnhideGroupCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHiddenGroup}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                <Separator />
                                 <MenuItem Header="Group settings…"
-                                          Command="{Binding DataContext.OpenGroupSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
                                           CommandParameter="{Binding Settings.Id}" />
                             </ContextMenu>
                         </Button.ContextMenu>
