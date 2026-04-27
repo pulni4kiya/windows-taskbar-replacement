@@ -1,15 +1,25 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
-using TaskbarNicifier.App.ViewModels;
+using System.Windows.Media;
 using TaskbarNicifier.App.Interop;
+using TaskbarNicifier.App.ViewModels;
 
 namespace TaskbarNicifier.App.Views;
 
 public partial class TaskbarOverlayWindow : Window
 {
     private HwndSource? _source;
+
+    private AppSlotViewModel? _pendingAppDragSlot;
+    private System.Windows.Point _pendingAppDragStart;
+    private bool _pendingAppDragActive;
+
+    private UserGroupViewModel? _pendingGroupDragVm;
+    private System.Windows.Point _pendingGroupDragStart;
+    private bool _pendingGroupDragActive;
 
     public TaskbarOverlayWindow()
     {
@@ -40,21 +50,194 @@ public partial class TaskbarOverlayWindow : Window
         };
     }
 
+    private void GroupSettingsPopup_OnClosed(object sender, EventArgs e)
+    {
+        if (DataContext is TaskbarOverlayViewModel vm)
+            vm.OnGroupSettingsPopupClosed();
+    }
+
+    private void AppSlot_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.DataContext is not AppSlotViewModel slot)
+            return;
+
+        _pendingAppDragSlot = slot;
+        _pendingAppDragStart = e.GetPosition(this);
+        _pendingAppDragActive = true;
+    }
+
+    private void RootWindow_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_pendingAppDragActive && _pendingAppDragSlot is not null && e.LeftButton == MouseButtonState.Pressed)
+        {
+            var d = (e.GetPosition(this) - _pendingAppDragStart).Length;
+            if (d > 6)
+            {
+                var slot = _pendingAppDragSlot;
+                _pendingAppDragSlot = null;
+                _pendingAppDragActive = false;
+
+                var payload = new StripDragPayload
+                {
+                    Kind = StripDragKind.AppSlot,
+                    SourceGroupId = slot.ParentGroupId,
+                    AppKey = slot.AppKey,
+                };
+                var data = new DataObject(typeof(StripDragPayload), payload);
+                _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+            }
+        }
+
+        if (_pendingGroupDragActive && _pendingGroupDragVm is not null && e.LeftButton == MouseButtonState.Pressed)
+        {
+            var d = (e.GetPosition(this) - _pendingGroupDragStart).Length;
+            if (d > 6)
+            {
+                var g = _pendingGroupDragVm;
+                _pendingGroupDragVm = null;
+                _pendingGroupDragActive = false;
+
+                var payload = new StripDragPayload
+                {
+                    Kind = StripDragKind.UserGroup,
+                    SourceGroupId = g.Settings.Id,
+                };
+                var data = new DataObject(typeof(StripDragPayload), payload);
+                _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+            }
+        }
+    }
+
+    private void RootWindow_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _pendingAppDragSlot = null;
+        _pendingAppDragActive = false;
+        _pendingGroupDragVm = null;
+        _pendingGroupDragActive = false;
+    }
+
+    private void GroupDragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.DataContext is not UserGroupViewModel g)
+            return;
+
+        _pendingGroupDragVm = g;
+        _pendingGroupDragStart = e.GetPosition(this);
+        _pendingGroupDragActive = true;
+    }
+
+    private void StripGroup_PreviewDragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(typeof(StripDragPayload)))
+            return;
+
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void StripGroup_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (DataContext is not TaskbarOverlayViewModel vm)
+            return;
+
+        if (!e.Data.GetDataPresent(typeof(StripDragPayload)))
+            return;
+
+        var p = (StripDragPayload)e.Data.GetData(typeof(StripDragPayload))!;
+        if (sender is not FrameworkElement fe || fe.DataContext is not UserGroupViewModel targetVm)
+            return;
+
+        if (p.Kind == StripDragKind.UserGroup)
+        {
+            if (string.Equals(p.SourceGroupId, targetVm.Settings.Id, StringComparison.Ordinal))
+                return;
+
+            vm.MoveGroupBefore(p.SourceGroupId, targetVm.Settings.Id);
+            e.Handled = true;
+            return;
+        }
+
+        if (p.Kind != StripDragKind.AppSlot || string.IsNullOrEmpty(p.AppKey))
+            return;
+
+        var ic = FindVisualChild<ItemsControl>(fe, "AppSlotsItems");
+        int insert;
+        if (targetVm.IsSingleItemDisplay || ic is null || ic.Items.Count == 0)
+        {
+            insert = vm.GetGroupTailInsertIndex(targetVm.Settings.Id);
+        }
+        else
+        {
+            var pt = e.GetPosition(ic);
+            var visualInsert = GetHorizontalInsertIndex(ic, pt);
+            insert = vm.ResolvePersistedInsertIndexForAppDrop(
+                targetVm.Settings.Id,
+                p.AppKey!,
+                p.SourceGroupId,
+                visualInsert);
+        }
+
+        vm.MoveAppToGroupAtUiIndex(p.AppKey, p.SourceGroupId, targetVm.Settings.Id, insert);
+        e.Handled = true;
+    }
+
+    private static int GetHorizontalInsertIndex(ItemsControl ic, System.Windows.Point posInItemsControl)
+    {
+        if (ic.Items.Count == 0)
+            return 0;
+
+        for (var i = 0; i < ic.Items.Count; i++)
+        {
+            if (ic.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement child)
+            {
+                var topLeft = child.TransformToAncestor(ic).Transform(new Point(0, 0));
+                var midX = topLeft.X + child.ActualWidth * 0.5;
+                if (posInItemsControl.X < midX)
+                    return i;
+            }
+        }
+
+        return ic.Items.Count;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent, string? childName = null)
+        where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typed)
+            {
+                if (childName is null || (child is FrameworkElement fe && fe.Name == childName))
+                    return typed;
+            }
+
+            var nested = FindVisualChild<T>(child, childName);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
 
-        // Allow dragging only in standalone mode; integrated overlay shouldn't be draggable.
-        if (DataContext is TaskbarOverlayViewModel vm && vm.Mode == OverlayMode.Standalone)
+        if (DataContext is not TaskbarOverlayViewModel vm || vm.Mode != OverlayMode.Standalone)
+            return;
+
+        if (WindowDragSuppressor.IsDragSuppressed(e.OriginalSource as DependencyObject))
+            return;
+
+        try
         {
-            try
-            {
-                DragMove();
-            }
-            catch (InvalidOperationException)
-            {
-                // Ignore if the drag can't start (rare edge cases).
-            }
+            DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+            // Ignore if the drag can't start (rare edge cases).
         }
     }
 
@@ -78,12 +261,11 @@ public partial class TaskbarOverlayWindow : Window
 
     private int HitTestResize(IntPtr lParam)
     {
-        // lParam contains screen coordinates (x,y) in low/high words.
         var x = (short)(lParam.ToInt32() & 0xFFFF);
         var y = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
         var pt = new Point(x, y);
 
-        const double grip = 10; // px
+        const double grip = 10;
 
         var left = Left;
         var top = Top;
@@ -94,7 +276,6 @@ public partial class TaskbarOverlayWindow : Window
         var onRight = Math.Abs(pt.X - right) <= grip;
         var onTop = Math.Abs(pt.Y - top) <= grip;
 
-        // Allow resizing left/right/up only (no bottom).
         if (onTop && onLeft) return NativeMethods.HTTOPLEFT;
         if (onTop && onRight) return NativeMethods.HTTOPRIGHT;
         if (onTop) return NativeMethods.HTTOP;
@@ -104,4 +285,3 @@ public partial class TaskbarOverlayWindow : Window
         return NativeMethods.HTCLIENT;
     }
 }
-

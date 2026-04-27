@@ -5,6 +5,7 @@ public sealed class OverlaySettings
     public IntegratedOverlaySettings Integrated { get; set; } = new();
     public LayoutSettings Layout { get; set; } = new();
     public int RefreshIntervalMs { get; set; } = 800;
+    public GroupingSettings Grouping { get; set; } = new();
 }
 
 public sealed class IntegratedOverlaySettings

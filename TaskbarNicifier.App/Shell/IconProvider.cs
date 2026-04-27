@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows.Interop;
@@ -10,10 +11,13 @@ namespace TaskbarNicifier.App.Shell;
 
 public sealed class IconProvider
 {
-    public ImageSource? TryGetIconForGroup(AppWindowGroup group)
+    public ImageSource? TryGetIconForWindows(IReadOnlyList<AppWindowItem> windows)
     {
+        if (windows.Count == 0)
+            return null;
+
         // Best effort: try window icons first, then fallback to file icon.
-        var hwnd = group.Windows.FirstOrDefault()?.Hwnd ?? IntPtr.Zero;
+        var hwnd = windows[0].Hwnd;
         if (hwnd != IntPtr.Zero)
         {
             var src = TryGetWindowIcon(hwnd);
@@ -21,7 +25,7 @@ public sealed class IconProvider
                 return src;
         }
 
-        var path = group.Windows.Select(w => w.ProcessPath).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+        var path = windows.Select(w => w.ProcessPath).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
         if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
         {
             var src = TryGetIconFromFile(path!);
@@ -31,6 +35,9 @@ public sealed class IconProvider
 
         return null;
     }
+
+    public ImageSource? TryGetIconForGroup(AppWindowGroup group)
+        => TryGetIconForWindows(group.Windows);
 
     private static ImageSource? TryGetWindowIcon(IntPtr hwnd)
     {
