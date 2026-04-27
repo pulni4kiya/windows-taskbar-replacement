@@ -16,6 +16,15 @@ internal static class NativeMethods
     internal const int SW_RESTORE = 9;
     internal const int SW_SHOW = 5;
 
+    internal const int WM_NCHITTEST = 0x0084;
+
+    internal const int HTCLIENT = 1;
+    internal const int HTLEFT = 10;
+    internal const int HTRIGHT = 11;
+    internal const int HTTOP = 12;
+    internal const int HTTOPLEFT = 13;
+    internal const int HTTOPRIGHT = 14;
+
     internal const uint WM_GETICON = 0x007F;
     internal const int ICON_SMALL2 = 2;
     internal const int ICON_SMALL = 0;
@@ -109,6 +118,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    internal static extern bool IsIconic(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);

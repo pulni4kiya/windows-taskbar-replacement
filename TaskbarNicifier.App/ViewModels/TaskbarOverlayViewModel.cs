@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
+using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 
 namespace TaskbarNicifier.App.ViewModels;
@@ -13,10 +14,14 @@ namespace TaskbarNicifier.App.ViewModels;
 public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 {
     private readonly DispatcherTimer _refreshTimer;
+    private readonly DispatcherTimer _persistDebounceTimer;
     private readonly WindowEnumerator _windowEnumerator = new();
     private readonly IconProvider _iconProvider = new();
     private readonly TaskbarPlacementService _taskbarPlacement = new();
     private readonly FullscreenDetector _fullscreenDetector = new();
+    private readonly VirtualDesktopService _virtualDesktopService = new();
+    private readonly OverlaySettingsService _settingsService = new();
+    private OverlaySettings _settings;
 
     private Window? _window;
     private Popup? _groupPopup;
@@ -54,21 +59,40 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
         OpenGroupMenuCommand = new RelayCommand(p => OpenGroupMenu(p as AppWindowGroup));
 
+        _settings = _settingsService.Load();
+
         _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(800),
         };
         _refreshTimer.Tick += (_, _) => Refresh();
+
+        _persistDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(600),
+        };
+        _persistDebounceTimer.Tick += (_, _) =>
+        {
+            _persistDebounceTimer.Stop();
+            PersistIntegratedBoundsIfNeeded();
+        };
     }
 
     public void AttachWindow(Window window)
     {
         _window = window;
+        _window.LocationChanged += OnWindowLocationOrSizeChanged;
+        _window.SizeChanged += OnWindowLocationOrSizeChanged;
         ApplyModeWindowSettings();
     }
 
     public void DetachWindow()
     {
+        if (_window is not null)
+        {
+            _window.LocationChanged -= OnWindowLocationOrSizeChanged;
+            _window.SizeChanged -= OnWindowLocationOrSizeChanged;
+        }
         _groupPopup = null;
         _window = null;
     }
@@ -97,6 +121,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ApplyFullscreenVisibility();
 
         var windows = _windowEnumerator.GetOpenAppWindows();
+        windows = ApplyContextFilters(windows);
         var groups = _windowEnumerator.GroupWindows(windows);
 
         // Ensure icons are filled (best-effort).
@@ -124,6 +149,29 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             AppGroups.Add(g);
     }
 
+    private System.Collections.Generic.List<AppWindowItem> ApplyContextFilters(System.Collections.Generic.List<AppWindowItem> windows)
+    {
+        // Filter to the monitor where the primary taskbar lives.
+        var taskbarHwnd = _taskbarPlacement.GetPrimaryTaskbarHwnd();
+        var taskbarMonitor = taskbarHwnd == IntPtr.Zero
+            ? IntPtr.Zero
+            : Interop.NativeMethods.MonitorFromWindow(taskbarHwnd, Interop.NativeMethods.MONITOR_DEFAULTTONEAREST);
+
+        return windows
+            .Where(w =>
+            {
+                if (taskbarMonitor != IntPtr.Zero)
+                {
+                    var winMonitor = Interop.NativeMethods.MonitorFromWindow(w.Hwnd, Interop.NativeMethods.MONITOR_DEFAULTTONEAREST);
+                    if (winMonitor != taskbarMonitor)
+                        return false;
+                }
+
+                return _virtualDesktopService.IsWindowOnCurrentDesktop(w.Hwnd);
+            })
+            .ToList();
+    }
+
     private void ApplyModeWindowSettings(OverlayMode? previousMode = null)
     {
         if (_window is null)
@@ -136,17 +184,20 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
             if (_taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
             {
-                var desiredHeight = (int)Math.Round(_window.Height);
-                var b = _taskbarPlacement.GetIntegratedOverlayBounds(
-                    rect,
-                    desiredHeight: desiredHeight,
-                    reserveLeft: IntegratedReserveLeftPx,
-                    reserveRight: IntegratedReserveRightPx);
+                if (!TryApplySavedIntegratedBounds(rect))
+                {
+                    var desiredHeight = (int)Math.Round(_window.Height);
+                    var b = _taskbarPlacement.GetIntegratedOverlayBounds(
+                        rect,
+                        desiredHeight: desiredHeight,
+                        reserveLeft: IntegratedReserveLeftPx,
+                        reserveRight: IntegratedReserveRightPx);
 
-                _window.Left = b.X;
-                _window.Top = b.Y;
-                _window.Width = b.Width;
-                _window.Height = b.Height;
+                    _window.Left = b.X;
+                    _window.Top = b.Y;
+                    _window.Width = b.Width;
+                    _window.Height = b.Height;
+                }
             }
         }
         else
@@ -175,6 +226,63 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                 _window.Top = 200;
             }
         }
+    }
+
+    private void OnWindowLocationOrSizeChanged(object? sender, EventArgs e)
+    {
+        if (_window is null)
+            return;
+
+        if (Mode != OverlayMode.Integrated)
+            return;
+
+        // Debounce writes while the user is dragging/resizing.
+        _persistDebounceTimer.Stop();
+        _persistDebounceTimer.Start();
+    }
+
+    private bool TryApplySavedIntegratedBounds(Interop.NativeMethods.RECT taskbarRect)
+    {
+        if (_window is null)
+            return false;
+
+        var s = _settings.Integrated;
+        if (s.Left is null || s.Top is null || s.Width is null || s.Height is null)
+            return false;
+
+        // Validate: must overlap the taskbar monitor area and be a sensible size.
+        var width = Math.Max(_window.MinWidth, s.Width.Value);
+        var height = Math.Max(_window.MinHeight, s.Height.Value);
+        if (width < 100 || height < 40)
+            return false;
+
+        var rect = new Rect(s.Left.Value, s.Top.Value, width, height);
+        var taskbar = new Rect(taskbarRect.Left, taskbarRect.Top, taskbarRect.Right - taskbarRect.Left, taskbarRect.Bottom - taskbarRect.Top);
+
+        // Require some intersection with the taskbar, so it doesn't end up on a different monitor.
+        if (!rect.IntersectsWith(taskbar))
+            return false;
+
+        _window.Left = rect.Left;
+        _window.Top = rect.Top;
+        _window.Width = rect.Width;
+        _window.Height = rect.Height;
+        return true;
+    }
+
+    private void PersistIntegratedBoundsIfNeeded()
+    {
+        if (_window is null)
+            return;
+
+        if (Mode != OverlayMode.Integrated)
+            return;
+
+        _settings.Integrated.Left = _window.Left;
+        _settings.Integrated.Top = _window.Top;
+        _settings.Integrated.Width = _window.Width;
+        _settings.Integrated.Height = _window.Height;
+        _settingsService.Save(_settings);
     }
 
     private void ApplyFullscreenVisibility()

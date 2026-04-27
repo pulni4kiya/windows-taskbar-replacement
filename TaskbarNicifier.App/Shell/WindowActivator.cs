@@ -10,8 +10,10 @@ public static class WindowActivator
         if (hwnd == IntPtr.Zero)
             return;
 
-        // Restore in case it's minimized, then bring to foreground.
-        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+        // Only restore if minimized; restoring a maximized/borderless-fullscreen window
+        // can force it into a non-fullscreen state.
+        if (NativeMethods.IsIconic(hwnd))
+            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
         NativeMethods.SetForegroundWindow(hwnd);
     }
 }

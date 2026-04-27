@@ -53,6 +53,15 @@
                                         Margin="0,0,14,0"
                                         Command="{Binding DataContext.OpenGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}">
+                                    <Button.ToolTip>
+                                        <StackPanel MaxWidth="420">
+                                            <TextBlock Text="{Binding TooltipHeader}"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,4" />
+                                            <TextBlock Text="{Binding TooltipBody}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Button.ToolTip>
                                     <Image Source="{Binding Icon}"
                                            Width="20"
                                            Height="20"

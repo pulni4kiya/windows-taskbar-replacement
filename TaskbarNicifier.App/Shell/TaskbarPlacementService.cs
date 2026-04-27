@@ -20,6 +20,11 @@ internal sealed class TaskbarPlacementService
         return true;
     }
 
+    public IntPtr GetPrimaryTaskbarHwnd()
+    {
+        return NativeMethods.FindWindowW("Shell_TrayWnd", null);
+    }
+
     public (int X, int Y, int Width, int Height) GetCenteredOverlayBounds(NativeMethods.RECT taskbarRect, int desiredWidth, int desiredHeight, int margin = 4)
     {
         var left = taskbarRect.Left;
