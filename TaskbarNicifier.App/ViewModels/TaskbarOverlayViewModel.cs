@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using System.Windows.Threading;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
@@ -51,6 +52,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public RelayCommand ToggleModeCommand { get; }
     public RelayCommand OpenGroupMenuCommand { get; }
+    public RelayCommand OpenSettingsCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -58,12 +60,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     {
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
         OpenGroupMenuCommand = new RelayCommand(p => OpenGroupMenu(p as AppWindowGroup));
+        OpenSettingsCommand = new RelayCommand(_ => ToggleSettingsPopup());
 
         _settings = _settingsService.Load();
+        _taskbarColorText = _settings.Layout.TaskbarColor;
 
         _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromMilliseconds(800),
+            Interval = TimeSpan.FromMilliseconds(GetClampedRefreshIntervalMs(_settings.RefreshIntervalMs)),
         };
         _refreshTimer.Tick += (_, _) => Refresh();
 
@@ -78,11 +82,146 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         };
     }
 
+    private bool _isSettingsOpen;
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        set
+        {
+            if (_isSettingsOpen == value) return;
+            _isSettingsOpen = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double IconPadding
+    {
+        get => _settings.Layout.IconPadding;
+        set
+        {
+            var v = Math.Max(0, value);
+            if (Math.Abs(_settings.Layout.IconPadding - v) < 0.001) return;
+            _settings.Layout.IconPadding = v;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IconSpacing));
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    public double IconSpacing
+    {
+        get => _settings.Layout.IconSpacing;
+        set
+        {
+            var v = Math.Max(0, value);
+            if (Math.Abs(_settings.Layout.IconSpacing - v) < 0.001) return;
+            _settings.Layout.IconSpacing = v;
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    public int RefreshIntervalMs
+    {
+        get => GetClampedRefreshIntervalMs(_settings.RefreshIntervalMs);
+        set
+        {
+            var v = GetClampedRefreshIntervalMs(value);
+            if (_settings.RefreshIntervalMs == v) return;
+            _settings.RefreshIntervalMs = v;
+            _refreshTimer.Interval = TimeSpan.FromMilliseconds(v);
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    private string _taskbarColorText;
+    public string TaskbarColorText
+    {
+        get => _taskbarColorText;
+        set
+        {
+            if (_taskbarColorText == value) return;
+            _taskbarColorText = value;
+            OnPropertyChanged();
+
+            if (TryParseColor(value, out _))
+            {
+                _settings.Layout.TaskbarColor = value.Trim();
+                OnPropertyChanged(nameof(TaskbarBrush));
+                PersistLayoutSettingsDebounced();
+            }
+        }
+    }
+
+    public Brush TaskbarBrush
+    {
+        get
+        {
+            var brush = new SolidColorBrush(ParseColorOrDefault(_settings.Layout.TaskbarColor));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
+    private void ToggleSettingsPopup()
+    {
+        IsSettingsOpen = !IsSettingsOpen;
+    }
+
+    private void PersistLayoutSettingsDebounced()
+    {
+        _persistDebounceTimer.Stop();
+        _persistDebounceTimer.Start();
+    }
+
+    private static int GetClampedRefreshIntervalMs(int value)
+    {
+        if (value < 250) return 250;
+        if (value > 10_000) return 10_000;
+        return value;
+    }
+
+    private static bool TryParseColor(string? input, out Color color)
+    {
+        color = default;
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        try
+        {
+            var obj = ColorConverter.ConvertFromString(input.Trim());
+            if (obj is Color c)
+            {
+                color = c;
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore parse failures
+        }
+
+        return false;
+    }
+
+    private static Color ParseColorOrDefault(string? input)
+    {
+        if (TryParseColor(input, out var c))
+            return c;
+
+        return (Color)ColorConverter.ConvertFromString("#FF202020");
+    }
+
+    private string? _lastGroupsFingerprint;
+
     public void AttachWindow(Window window)
     {
         _window = window;
         _window.LocationChanged += OnWindowLocationOrSizeChanged;
         _window.SizeChanged += OnWindowLocationOrSizeChanged;
+        OnPropertyChanged(nameof(TaskbarBrush));
+        OnPropertyChanged(nameof(TaskbarColorText));
         ApplyModeWindowSettings();
     }
 
@@ -123,6 +262,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         var windows = _windowEnumerator.GetOpenAppWindows();
         windows = ApplyContextFilters(windows);
         var groups = _windowEnumerator.GroupWindows(windows);
+
+        var fingerprint = string.Join("|", groups.Select(g =>
+            $"{g.GroupKey}:{g.Windows.Count}:{string.Join(",", g.Windows.Select(w => w.Title))}"));
+        if (fingerprint == _lastGroupsFingerprint)
+            return;
+        _lastGroupsFingerprint = fingerprint;
 
         // Ensure icons are filled (best-effort).
         for (var i = 0; i < groups.Count; i++)
@@ -194,7 +339,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         reserveRight: IntegratedReserveRightPx);
 
                     _window.Left = b.X;
-                    _window.Top = b.Y;
+                    _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(b.Y, b.Height);
                     _window.Width = b.Width;
                     _window.Height = b.Height;
                 }
@@ -264,10 +409,33 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return false;
 
         _window.Left = rect.Left;
-        _window.Top = rect.Top;
+        _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(rect.Top, rect.Height);
         _window.Width = rect.Width;
         _window.Height = rect.Height;
         return true;
+    }
+
+    private double ClampIntegratedTopToTaskbarMonitorBottom(double desiredTop, double height)
+    {
+        if (_window is null)
+            return desiredTop;
+
+        if (!_taskbarPlacement.TryGetPrimaryTaskbarMonitorInfo(out var mi))
+            return desiredTop;
+
+        var monitorBottom = mi.rcMonitor.Bottom;
+        var newTop = desiredTop;
+
+        // If the window extends below the taskbar monitor, pull it up so bottoms align.
+        var bottom = desiredTop + height;
+        if (bottom > monitorBottom)
+            newTop = monitorBottom - height;
+
+        // Also keep it within the monitor.
+        if (newTop < mi.rcMonitor.Top)
+            newTop = mi.rcMonitor.Top;
+
+        return newTop;
     }
 
     private void PersistIntegratedBoundsIfNeeded()
@@ -275,13 +443,15 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return;
 
-        if (Mode != OverlayMode.Integrated)
-            return;
+        // Reuse the same debounced persistence for both integrated bounds and layout/interval settings.
 
-        _settings.Integrated.Left = _window.Left;
-        _settings.Integrated.Top = _window.Top;
-        _settings.Integrated.Width = _window.Width;
-        _settings.Integrated.Height = _window.Height;
+        if (Mode == OverlayMode.Integrated)
+        {
+            _settings.Integrated.Left = _window.Left;
+            _settings.Integrated.Top = _window.Top;
+            _settings.Integrated.Width = _window.Width;
+            _settings.Integrated.Height = _window.Height;
+        }
         _settingsService.Save(_settings);
     }
 

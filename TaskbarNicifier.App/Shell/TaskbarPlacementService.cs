@@ -25,6 +25,26 @@ internal sealed class TaskbarPlacementService
         return NativeMethods.FindWindowW("Shell_TrayWnd", null);
     }
 
+    public bool TryGetPrimaryTaskbarMonitorInfo(out NativeMethods.MONITORINFO info)
+    {
+        info = default;
+
+        var taskbarHwnd = GetPrimaryTaskbarHwnd();
+        if (taskbarHwnd == IntPtr.Zero)
+            return false;
+
+        var monitor = NativeMethods.MonitorFromWindow(taskbarHwnd, NativeMethods.MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        info = new NativeMethods.MONITORINFO
+        {
+            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MONITORINFO>()
+        };
+
+        return NativeMethods.GetMonitorInfoW(monitor, ref info);
+    }
+
     public (int X, int Y, int Width, int Height) GetCenteredOverlayBounds(NativeMethods.RECT taskbarRect, int desiredWidth, int desiredHeight, int margin = 4)
     {
         var left = taskbarRect.Left;
