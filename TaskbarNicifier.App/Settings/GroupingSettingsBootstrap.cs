@@ -22,7 +22,10 @@ public static class GroupingSettingsBootstrap
                         g.Groups.Any(x => string.Equals(x.Id, g.HiddenGroupId, StringComparison.Ordinal));
 
         if (hasDefault && hasHidden)
+        {
+            FindGroup(g, g.HiddenGroupId)!.DisplayType = GroupDisplayType.SingleItem;
             return;
+        }
 
         g.Groups.Clear();
         var defId = Guid.NewGuid().ToString("N");

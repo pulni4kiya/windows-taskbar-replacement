@@ -7,7 +7,6 @@
         xmlns:local="clr-namespace:TaskbarNicifier.App.Views"
         xmlns:vm="clr-namespace:TaskbarNicifier.App.ViewModels"
         xmlns:conv="clr-namespace:TaskbarNicifier.App.Views.Converters"
-        xmlns:settings="clr-namespace:TaskbarNicifier.App.Settings"
         mc:Ignorable="d"
         Title="Taskbar Nicifier"
         Height="80"
@@ -73,12 +72,12 @@
                                    Foreground="#CCFFFFFF" />
                     </Border>
                     <StackPanel x:Name="ExpandedStrip"
-                                Orientation="Horizontal"
-                                Visibility="Visible">
+                                Orientation="Horizontal">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Settings.DisplayType}" Value="{x:Static settings:GroupDisplayType.SingleItem}">
+                                    <DataTrigger Binding="{Binding IsSingleItemDisplay}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -109,9 +108,6 @@
                                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                 <MenuItem Header="Hide"
                                                           Command="{Binding DataContext.HideAppCommand, Source={x:Reference RootWindow}}"
-                                                          CommandParameter="{Binding}" />
-                                                <MenuItem Header="Unhide"
-                                                          Command="{Binding DataContext.UnhideAppCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding}" />
                                                 <Separator />
                                                 <MenuItem Header="Group settings…"
@@ -149,15 +145,15 @@
                         </ItemsControl>
                     </StackPanel>
                     <Button x:Name="CollapsedGroupButton"
-                            Visibility="Collapsed"
                             VerticalAlignment="Stretch"
                             Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                             Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
                             Command="{Binding DataContext.OpenCollapsedGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Settings.DisplayType}" Value="{x:Static settings:GroupDisplayType.SingleItem}">
+                                    <DataTrigger Binding="{Binding IsSingleItemDisplay}" Value="True">
                                         <Setter Property="Visibility" Value="Visible" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -184,6 +180,26 @@
                                             </Style.Triggers>
                                         </Style>
                                     </MenuItem.Style>
+                                </MenuItem>
+                                <MenuItem Header="Unhide app"
+                                          ItemsSource="{Binding Slots}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHiddenGroup}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                    <MenuItem.ItemContainerStyle>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Header" Value="{Binding DisplayName}" />
+                                            <Setter Property="Command" Value="{Binding DataContext.UnhideAppCommand, Source={x:Reference RootWindow}}" />
+                                            <Setter Property="CommandParameter" Value="{Binding}" />
+                                        </Style>
+                                    </MenuItem.ItemContainerStyle>
                                 </MenuItem>
                                 <Separator />
                                 <MenuItem Header="Group settings…"

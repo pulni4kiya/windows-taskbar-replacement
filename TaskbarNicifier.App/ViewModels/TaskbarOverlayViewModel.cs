@@ -174,13 +174,30 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public GroupDisplayType EditingGroupDisplayType
     {
-        get => EditingGroup?.DisplayType ?? GroupDisplayType.Expanded;
+        get
+        {
+            if (EditingGroup is null)
+                return GroupDisplayType.Expanded;
+
+            return string.Equals(EditingGroup.Id, _settings.Grouping.HiddenGroupId, StringComparison.Ordinal)
+                ? GroupDisplayType.SingleItem
+                : EditingGroup.DisplayType;
+        }
         set
         {
             if (EditingGroup is null) return;
+            if (string.Equals(EditingGroup.Id, _settings.Grouping.HiddenGroupId, StringComparison.Ordinal) &&
+                value != GroupDisplayType.SingleItem)
+            {
+                EditingGroup.DisplayType = GroupDisplayType.SingleItem;
+                OnPropertyChanged();
+                return;
+            }
+
             if (EditingGroup.DisplayType == value) return;
             EditingGroup.DisplayType = value;
             OnPropertyChanged();
+            BumpGroupingAndRebuild();
         }
     }
 
