@@ -10,17 +10,18 @@
         Title="Taskbar Nicifier"
         Height="80"
         Width="600"
-        MinHeight="70"
+        MinHeight="40"
         MinWidth="320"
         WindowStartupLocation="Manual"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         Background="Transparent"
         AllowsTransparency="True">
     <Window.Resources>
         <conv:DoubleToUniformThicknessConverter x:Key="DoubleToUniformThickness" />
         <conv:DoubleToRightMarginConverter x:Key="DoubleToRightMargin" />
         <conv:ButtonIconSizeConverter x:Key="ButtonIconSize" />
+        <conv:GroupClickContextConverter x:Key="GroupClickContext" />
         <Style TargetType="{x:Type ToolTip}">
             <Setter Property="ToolTipService.InitialShowDelay" Value="400" />
             <Setter Property="ToolTipService.ShowDuration" Value="20000" />
@@ -40,6 +41,7 @@
                         Height="34"
                         Margin="10,0,8,0"
                         Command="{Binding OpenSettingsCommand}"
+                        x:Name="SettingsButton"
                         ToolTip="Settings">
                     <TextBlock Text="⚙"
                                FontSize="16"
@@ -62,7 +64,8 @@
             <Grid>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding AppGroups}">
+                    <Border Padding="10,0,0,0">
+                        <ItemsControl ItemsSource="{Binding AppGroups}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <StackPanel Orientation="Horizontal" />
@@ -75,7 +78,13 @@
                                         Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                                         Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
                                         Command="{Binding DataContext.OpenGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding}">
+                                        >
+                                    <Button.CommandParameter>
+                                        <MultiBinding Converter="{StaticResource GroupClickContext}">
+                                            <Binding />
+                                            <Binding RelativeSource="{RelativeSource Self}" />
+                                        </MultiBinding>
+                                    </Button.CommandParameter>
                                     <Button.ToolTip>
                                         <StackPanel MaxWidth="420">
                                             <TextBlock Text="{Binding TooltipHeader}"
@@ -87,6 +96,11 @@
                                     </Button.ToolTip>
                                     <Image Source="{Binding Icon}"
                                            Stretch="Uniform">
+                                        <Image.RenderTransform>
+                                            <ScaleTransform ScaleX="1" ScaleY="1" />
+                                        </Image.RenderTransform>
+                                        <Image.RenderTransformOrigin>0.5,0.5</Image.RenderTransformOrigin>
+                                        <RenderOptions.BitmapScalingMode>HighQuality</RenderOptions.BitmapScalingMode>
                                         <Image.Width>
                                             <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                                 <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
@@ -103,19 +117,22 @@
                                 </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ItemsControl>
+                    </Border>
                 </ScrollViewer>
 
                 <Popup IsOpen="{Binding IsSettingsOpen}"
                        StaysOpen="False"
-                       Placement="Center">
-                    <Border Background="#FF1A1A1A"
-                            BorderBrush="#55333333"
+                       PlacementTarget="{Binding ElementName=SettingsButton}"
+                       Placement="Top"
+                       VerticalOffset="6">
+                    <Border Background="#FFF0F0F0"
+                            BorderBrush="#FFCCCCCC"
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="12"
                             MinWidth="280">
-                        <StackPanel>
+                        <StackPanel TextElement.Foreground="#FF222222">
                             <TextBlock Text="Settings"
                                        FontSize="14"
                                        FontWeight="SemiBold"
@@ -147,7 +164,17 @@
                             <TextBlock Margin="0,10,0,0"
                                        Text="Taskbar color (hex, e.g. #FF202020)" />
                             <TextBox Text="{Binding TaskbarColorText, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,0,0" />
+                                     Margin="0,4,0,0"
+                                     Background="#FFFFFFFF"
+                                     Foreground="#FF222222"
+                                     BorderBrush="#FFAAAAAA" />
+
+                            <Button Content="Exit"
+                                    Margin="0,14,0,0"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding ExitCommand}"
+                                    ToolTip="Close Taskbar Nicifier" />
                         </StackPanel>
                     </Border>
                 </Popup>

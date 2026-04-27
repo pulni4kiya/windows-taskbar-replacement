@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
+using TaskbarNicifier.App.Views.Converters;
 
 namespace TaskbarNicifier.App.ViewModels;
 
@@ -53,14 +54,16 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand ToggleModeCommand { get; }
     public RelayCommand OpenGroupMenuCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
+    public RelayCommand ExitCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public TaskbarOverlayViewModel()
     {
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
-        OpenGroupMenuCommand = new RelayCommand(p => OpenGroupMenu(p as AppWindowGroup));
+        OpenGroupMenuCommand = new RelayCommand(p => OpenGroupMenu(p));
         OpenSettingsCommand = new RelayCommand(_ => ToggleSettingsPopup());
+        ExitCommand = new RelayCommand(_ => ExitApplication());
 
         _settings = _settingsService.Load();
         _taskbarColorText = _settings.Layout.TaskbarColor;
@@ -167,6 +170,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private void ToggleSettingsPopup()
     {
         IsSettingsOpen = !IsSettingsOpen;
+    }
+
+    private static void ExitApplication()
+    {
+        Application.Current?.Shutdown();
     }
 
     private void PersistLayoutSettingsDebounced()
@@ -473,9 +481,25 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _window.Visibility = desiredVisibility;
     }
 
-    private void OpenGroupMenu(AppWindowGroup? group)
+    private void OpenGroupMenu(object? parameter)
     {
-        if (_window is null || group is null)
+        if (_window is null || parameter is null)
+            return;
+
+        AppWindowGroup? group = null;
+        System.Windows.FrameworkElement? placementTarget = null;
+
+        if (parameter is GroupClickContext ctx)
+        {
+            group = ctx.Group;
+            placementTarget = ctx.PlacementTarget;
+        }
+        else
+        {
+            group = parameter as AppWindowGroup;
+        }
+
+        if (group is null)
             return;
 
         if (group.Windows.Count == 1)
@@ -503,8 +527,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         _groupPopup = new Popup
         {
-            PlacementTarget = _window,
-            Placement = PlacementMode.Center,
+            PlacementTarget = placementTarget ?? _window,
+            Placement = PlacementMode.Top,
+            VerticalOffset = 6,
             StaysOpen = false,
             Child = new System.Windows.Controls.Border
             {

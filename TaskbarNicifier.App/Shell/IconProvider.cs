@@ -34,8 +34,8 @@ public sealed class IconProvider
 
     private static ImageSource? TryGetWindowIcon(IntPtr hwnd)
     {
-        // WM_GETICON tries small2/small/big in practice.
-        foreach (var kind in new[] { NativeMethods.ICON_SMALL2, NativeMethods.ICON_SMALL, NativeMethods.ICON_BIG })
+        // Prefer large icons first for better scaling quality.
+        foreach (var kind in new[] { NativeMethods.ICON_BIG, NativeMethods.ICON_SMALL2, NativeMethods.ICON_SMALL })
         {
             var hIcon = NativeMethods.SendMessageW(hwnd, NativeMethods.WM_GETICON, new IntPtr(kind), IntPtr.Zero);
             if (hIcon != IntPtr.Zero)
@@ -43,13 +43,13 @@ public sealed class IconProvider
         }
 
         // Fallback to class icon.
-        var classSmall = NativeMethods.GetClassLongPtrW(hwnd, NativeMethods.CLASS_LONG_INDEX_GCLP_HICONSM);
-        if (classSmall != IntPtr.Zero)
-            return CreateImageSourceFromHIcon(classSmall);
-
         var classBig = NativeMethods.GetClassLongPtrW(hwnd, NativeMethods.CLASS_LONG_INDEX_GCLP_HICON);
         if (classBig != IntPtr.Zero)
             return CreateImageSourceFromHIcon(classBig);
+
+        var classSmall = NativeMethods.GetClassLongPtrW(hwnd, NativeMethods.CLASS_LONG_INDEX_GCLP_HICONSM);
+        if (classSmall != IntPtr.Zero)
+            return CreateImageSourceFromHIcon(classSmall);
 
         return null;
     }
@@ -63,7 +63,7 @@ public sealed class IconProvider
                 0,
                 out var info,
                 (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.SHFILEINFOW>(),
-                NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_SMALLICON);
+                NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_LARGEICON);
 
             if (info.hIcon == IntPtr.Zero)
                 return null;
@@ -90,7 +90,7 @@ public sealed class IconProvider
             var img = Imaging.CreateBitmapSourceFromHIcon(
                 hIcon,
                 System.Windows.Int32Rect.Empty,
-                BitmapSizeOptions.FromEmptyOptions());
+                BitmapSizeOptions.FromWidthAndHeight(64, 64));
             img.Freeze();
             return img;
         }
