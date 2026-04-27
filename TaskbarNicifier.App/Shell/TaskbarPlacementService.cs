@@ -39,5 +39,29 @@ internal sealed class TaskbarPlacementService
 
         return (x, y, width, height);
     }
+
+    public (int X, int Y, int Width, int Height) GetIntegratedOverlayBounds(
+        NativeMethods.RECT taskbarRect,
+        int desiredHeight,
+        int reserveLeft,
+        int reserveRight,
+        int margin = 4)
+    {
+        var left = taskbarRect.Left;
+        var top = taskbarRect.Top;
+        var right = taskbarRect.Right;
+        var bottom = taskbarRect.Bottom;
+
+        var taskbarWidth = Math.Max(0, right - left);
+        var taskbarHeight = Math.Max(0, bottom - top);
+
+        var width = Math.Max(0, taskbarWidth - reserveLeft - reserveRight - margin * 2);
+        var height = Math.Min(desiredHeight, Math.Max(0, taskbarHeight - margin * 2));
+
+        var x = left + reserveLeft + margin;
+        var y = top + (taskbarHeight - height) / 2;
+
+        return (x, y, width, height);
+    }
 }
 

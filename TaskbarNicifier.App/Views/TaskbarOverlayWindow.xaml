@@ -9,9 +9,11 @@
         Title="Taskbar Nicifier"
         Height="80"
         Width="600"
+        MinHeight="70"
+        MinWidth="320"
         WindowStartupLocation="Manual"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResizeWithGrip"
         Background="Transparent"
         AllowsTransparency="True">
     <Window.DataContext>
@@ -34,28 +36,40 @@
                            VerticalAlignment="Center" />
             </Button>
 
-            <ItemsControl ItemsSource="{Binding AppGroups}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
+            <Grid>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding AppGroups}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
 
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Width="36"
-                                Height="36"
-                                Margin="0,0,14,0"
-                                Command="{Binding DataContext.OpenGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}">
-                            <Image Source="{Binding Icon}"
-                                   Width="20"
-                                   Height="20"
-                                   Stretch="Uniform" />
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Width="36"
+                                        Height="36"
+                                        Margin="0,0,14,0"
+                                        Command="{Binding DataContext.OpenGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}">
+                                    <Image Source="{Binding Icon}"
+                                           Width="20"
+                                           Height="20"
+                                           Stretch="Uniform" />
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <ResizeGrip HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Margin="2"
+                            Width="14"
+                            Height="14"
+                            Foreground="#99FFFFFF" />
+            </Grid>
         </DockPanel>
     </Border>
 </Window>

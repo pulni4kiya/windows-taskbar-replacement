@@ -21,6 +21,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private Window? _window;
     private Popup? _groupPopup;
 
+    private const int IntegratedReserveLeftPx = 220;
+    private const int IntegratedReserveRightPx = 360;
+    private const int StandaloneGapFromTaskbarPx = 12;
+
     private OverlayMode _mode = OverlayMode.Standalone;
     public OverlayMode Mode
     {
@@ -82,9 +86,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private void ToggleMode()
     {
+        var previousMode = Mode;
         Mode = Mode == OverlayMode.Standalone ? OverlayMode.Integrated : OverlayMode.Standalone;
 
-        ApplyModeWindowSettings();
+        ApplyModeWindowSettings(previousMode);
     }
 
     private void Refresh()
@@ -119,7 +124,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             AppGroups.Add(g);
     }
 
-    private void ApplyModeWindowSettings()
+    private void ApplyModeWindowSettings(OverlayMode? previousMode = null)
     {
         if (_window is null)
             return;
@@ -131,9 +136,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
             if (_taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
             {
-                var desiredWidth = (int)Math.Round(_window.Width);
                 var desiredHeight = (int)Math.Round(_window.Height);
-                var b = _taskbarPlacement.GetCenteredOverlayBounds(rect, desiredWidth, desiredHeight);
+                var b = _taskbarPlacement.GetIntegratedOverlayBounds(
+                    rect,
+                    desiredHeight: desiredHeight,
+                    reserveLeft: IntegratedReserveLeftPx,
+                    reserveRight: IntegratedReserveRightPx);
 
                 _window.Left = b.X;
                 _window.Top = b.Y;
@@ -145,7 +153,23 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         {
             _window.ShowInTaskbar = true;
             _window.Topmost = false;
-            if (_window.Left == 0 && _window.Top == 0)
+
+            if (previousMode == OverlayMode.Integrated && _taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
+            {
+                // Nudge it away from the taskbar so it doesn't sit behind it.
+                var screenH = SystemParameters.PrimaryScreenHeight;
+                var isBottomTaskbar = rect.Top > screenH / 2;
+
+                var newLeft = _window.Left;
+                var newTop = isBottomTaskbar
+                    ? rect.Top - _window.Height - StandaloneGapFromTaskbarPx
+                    : rect.Bottom + StandaloneGapFromTaskbarPx;
+
+                newTop = Math.Max(0, newTop);
+                _window.Left = Math.Max(0, newLeft);
+                _window.Top = newTop;
+            }
+            else if (_window.Left == 0 && _window.Top == 0)
             {
                 _window.Left = 200;
                 _window.Top = 200;
@@ -175,6 +199,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     {
         if (_window is null || group is null)
             return;
+
+        if (group.Windows.Count == 1)
+        {
+            WindowActivator.FocusWindow(group.Windows[0].Hwnd);
+            return;
+        }
 
         // Basic popup for the MVP; positioning and styling can be refined.
         var list = new System.Windows.Controls.ListBox
