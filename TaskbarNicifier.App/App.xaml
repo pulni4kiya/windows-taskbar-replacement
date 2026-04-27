@@ -1,0 +1,9 @@
+﻿<Application x:Class="TaskbarNicifier.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:TaskbarNicifier.App"
+             StartupUri="Views/TaskbarOverlayWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
