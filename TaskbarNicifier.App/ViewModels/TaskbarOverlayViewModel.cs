@@ -535,6 +535,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (fp == _lastLiveFingerprint && _groupingVersion == _lastAppliedGroupingVersion)
             return;
 
+        // Rebuilding replaces slot visuals and invalidates the window picker's PlacementTarget
+        // (the slot button), which breaks mouse input on the popup list until it is closed.
+        // Fingerprints include titles, so multi-window apps often refresh every tick — defer
+        // strip rebuild while the picker is open.
+        if (_groupPopup?.IsOpen == true)
+            return;
+
         _lastLiveFingerprint = fp;
         _lastAppliedGroupingVersion = _groupingVersion;
 
@@ -962,6 +969,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         DateTime hoverStartUtc = default;
         IntPtr hoveredHwnd = IntPtr.Zero;
 
+        void ActivatePickerItem(AppWindowItem item)
+        {
+            WindowActivator.FocusWindow(item.Hwnd);
+            ClearAttentionForHwnd(item.Hwnd);
+            if (_groupPopup is not null)
+                _groupPopup.IsOpen = false;
+        }
+
         var list = new System.Windows.Controls.ListBox
         {
             ItemsSource = windows,
@@ -1011,16 +1026,25 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                             hoverTimer?.Start();
                         }
                     })),
+                new EventSetter(
+                    System.Windows.Controls.ListBoxItem.PreviewMouseLeftButtonUpEvent,
+                    new System.Windows.Input.MouseButtonEventHandler((sender, e) =>
+                    {
+                        if (IsExternalDragActive)
+                            return;
+
+                        if (sender is System.Windows.Controls.ListBoxItem { DataContext: AppWindowItem item })
+                        {
+                            ActivatePickerItem(item);
+                            e.Handled = true;
+                        }
+                    })),
             },
         };
         list.SelectionChanged += (_, _) =>
         {
             if (list.SelectedItem is AppWindowItem item)
-            {
-                WindowActivator.FocusWindow(item.Hwnd);
-                ClearAttentionForHwnd(item.Hwnd);
-                _groupPopup!.IsOpen = false;
-            }
+                ActivatePickerItem(item);
         };
 
         _groupPopup = new Popup
