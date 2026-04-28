@@ -21,18 +21,24 @@ public sealed class UserGroupViewModel
         UserTaskbarGroupSettings settings,
         ObservableCollection<AppSlotViewModel> slots,
         Brush groupBackground,
-        bool isHiddenGroup)
+        bool isHiddenGroup,
+        bool canMoveLeft,
+        bool canMoveRight)
     {
         Settings = settings;
         Slots = slots;
         GroupBackground = groupBackground;
         IsHiddenGroup = isHiddenGroup;
+        CanMoveLeft = canMoveLeft;
+        CanMoveRight = canMoveRight;
     }
 
     public UserTaskbarGroupSettings Settings { get; }
     public ObservableCollection<AppSlotViewModel> Slots { get; }
     public Brush GroupBackground { get; }
     public bool IsHiddenGroup { get; }
+    public bool CanMoveLeft { get; }
+    public bool CanMoveRight { get; }
     public bool IsSingleItemDisplay => IsHiddenGroup || Settings.DisplayType == GroupDisplayType.SingleItem;
     public ImageSource? CollapsedIcon => IsHiddenGroup ? HiddenGroupIcon : Slots.FirstOrDefault()?.Icon;
 

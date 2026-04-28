@@ -66,6 +66,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand CloseGroupSettingsCommand { get; }
     public RelayCommand PickEditingGroupColorCommand { get; }
     public RelayCommand AddUserStripGroupCommand { get; }
+    public RelayCommand MoveGroupLeftCommand { get; }
+    public RelayCommand MoveGroupRightCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -87,6 +89,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
         PickEditingGroupColorCommand = new RelayCommand(_ => PickEditingGroupColor());
         AddUserStripGroupCommand = new RelayCommand(_ => AddUserStripGroup());
+        MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
+        MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
 
         _settings = _settingsService.Load();
         _taskbarColorText = _settings.Layout.TaskbarColor;
@@ -237,6 +241,21 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             var v = Math.Max(0, value);
             if (Math.Abs(_settings.Layout.IconSpacing - v) < 0.001) return;
             _settings.Layout.IconSpacing = v;
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    private const double DefaultGroupSpacingPx = 8;
+
+    public double GroupSpacing
+    {
+        get => _settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx;
+        set
+        {
+            var v = Math.Max(0, value);
+            if (Math.Abs((_settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx) - v) < 0.001) return;
+            _settings.Layout.GroupSpacing = v;
             OnPropertyChanged();
             PersistLayoutSettingsDebounced();
         }
@@ -442,8 +461,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
 
         StripGroups.Clear();
-        foreach (var ug in gs.Groups)
+        var groupsList = gs.Groups;
+        for (var i = 0; i < groupsList.Count; i++)
         {
+            var ug = groupsList[i];
             var slots = new ObservableCollection<AppSlotViewModel>();
             foreach (var key in ug.OrderedAppKeys)
             {
@@ -456,14 +477,18 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     displayName: AppIdentity.GetDisplayName(wins[0]),
                     windows: wins,
                     icon: icon,
-                    parentGroupId: ug.Id));
+                    parentGroupId: ug.Id,
+                    canMoveGroupLeft: i > 0,
+                    canMoveGroupRight: i < groupsList.Count - 1));
             }
 
             StripGroups.Add(new UserGroupViewModel(
                 ug,
                 slots,
                 CreateGroupBackgroundBrush(ug.Color),
-                string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal)));
+                string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal),
+                canMoveLeft: i > 0,
+                canMoveRight: i < groupsList.Count - 1));
         }
     }
 
@@ -982,6 +1007,47 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     {
         GroupingOrderOperations.MoveGroupBefore(_settings.Grouping, groupIdToMove, beforeGroupId);
         BumpGroupingAndRebuild();
+    }
+
+    private static string? ResolveGroupIdForReorder(object? parameter)
+    {
+        return parameter switch
+        {
+            UserGroupViewModel g => g.Settings.Id,
+            AppSlotViewModel s => s.ParentGroupId,
+            string id when !string.IsNullOrEmpty(id) => id,
+            _ => null,
+        };
+    }
+
+    private void MoveGroupLeft(object? parameter)
+    {
+        var groupId = ResolveGroupIdForReorder(parameter);
+        if (groupId is null)
+            return;
+
+        var list = _settings.Grouping.Groups;
+        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        if (idx <= 0)
+            return;
+
+        var beforeId = list[idx - 1].Id;
+        MoveGroupBefore(groupId, beforeId);
+    }
+
+    private void MoveGroupRight(object? parameter)
+    {
+        var groupId = ResolveGroupIdForReorder(parameter);
+        if (groupId is null)
+            return;
+
+        var list = _settings.Grouping.Groups;
+        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        if (idx < 0 || idx >= list.Count - 1)
+            return;
+
+        string? beforeId = idx + 2 < list.Count ? list[idx + 2].Id : null;
+        MoveGroupBefore(groupId, beforeId);
     }
 
     /// <summary>Insert index at end of group's persisted key list (for drops onto collapsed / single-item UI).</summary>

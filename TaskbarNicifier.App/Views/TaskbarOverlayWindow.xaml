@@ -49,28 +49,50 @@
         </Style>
         <DataTemplate DataType="{x:Type vm:UserGroupViewModel}">
             <Border x:Name="GroupBorder"
-                    Margin="6,0,2,0"
+                    Margin="{Binding DataContext.GroupSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                     Padding="2"
                     CornerRadius="10"
                     Background="{Binding GroupBackground}"
                     AllowDrop="True"
                     PreviewDragOver="StripGroup_PreviewDragOver"
                     Drop="StripGroup_Drop">
+                <Border.ContextMenu>
+                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="Move group left"
+                                  Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanMoveLeft}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <MenuItem Header="Move group right"
+                                  Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanMoveRight}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="Group settings…"
+                                  Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding Settings.Id}" />
+                    </ContextMenu>
+                </Border.ContextMenu>
                 <DockPanel LastChildFill="True">
-                    <Border DockPanel.Dock="Left"
-                            Width="14"
-                            Margin="0,0,2,0"
-                            Background="#25000000"
-                            CornerRadius="4"
-                            Cursor="Hand"
-                            ToolTip="Drag to reorder groups"
-                            PreviewMouseLeftButtonDown="GroupDragHandle_PreviewMouseLeftButtonDown">
-                        <TextBlock Text="≡"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   FontSize="12"
-                                   Foreground="#CCFFFFFF" />
-                    </Border>
                     <StackPanel x:Name="ExpandedStrip"
                                 Orientation="Horizontal">
                         <StackPanel.Style>
@@ -109,6 +131,35 @@
                                                 <MenuItem Header="Hide"
                                                           Command="{Binding DataContext.HideAppCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding}" />
+                                                <Separator />
+                                                <MenuItem Header="Move group left"
+                                                          Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanMoveGroupLeft}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <MenuItem Header="Move group right"
+                                                          Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanMoveGroupRight}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
                                                 <Separator />
                                                 <MenuItem Header="Group settings…"
                                                           Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
@@ -167,6 +218,34 @@
                         </Button.CommandParameter>
                         <Button.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="Move group left"
+                                          Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanMoveLeft}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                <MenuItem Header="Move group right"
+                                          Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanMoveRight}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
                                 <MenuItem Header="Unhide all"
                                           Command="{Binding DataContext.UnhideGroupCommand, Source={x:Reference RootWindow}}"
                                           CommandParameter="{Binding}">
@@ -322,6 +401,14 @@
                                     SmallChange="1"
                                     LargeChange="2"
                                     Value="{Binding IconSpacing, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="{Binding GroupSpacing, StringFormat=Group spacing: {0:0}}" />
+                            <Slider Minimum="0"
+                                    Maximum="48"
+                                    SmallChange="1"
+                                    LargeChange="2"
+                                    Value="{Binding GroupSpacing, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,8,0,0"
                                        Text="{Binding RefreshIntervalMs, StringFormat=Refresh (ms): {0}}" />

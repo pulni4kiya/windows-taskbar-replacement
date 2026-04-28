@@ -17,10 +17,6 @@ public partial class TaskbarOverlayWindow : Window
     private System.Windows.Point _pendingAppDragStart;
     private bool _pendingAppDragActive;
 
-    private UserGroupViewModel? _pendingGroupDragVm;
-    private System.Windows.Point _pendingGroupDragStart;
-    private bool _pendingGroupDragActive;
-
     public TaskbarOverlayWindow()
     {
         InitializeComponent();
@@ -79,28 +75,8 @@ public partial class TaskbarOverlayWindow : Window
 
                 var payload = new StripDragPayload
                 {
-                    Kind = StripDragKind.AppSlot,
                     SourceGroupId = slot.ParentGroupId,
                     AppKey = slot.AppKey,
-                };
-                var data = new DataObject(typeof(StripDragPayload), payload);
-                _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
-            }
-        }
-
-        if (_pendingGroupDragActive && _pendingGroupDragVm is not null && e.LeftButton == MouseButtonState.Pressed)
-        {
-            var d = (e.GetPosition(this) - _pendingGroupDragStart).Length;
-            if (d > 6)
-            {
-                var g = _pendingGroupDragVm;
-                _pendingGroupDragVm = null;
-                _pendingGroupDragActive = false;
-
-                var payload = new StripDragPayload
-                {
-                    Kind = StripDragKind.UserGroup,
-                    SourceGroupId = g.Settings.Id,
                 };
                 var data = new DataObject(typeof(StripDragPayload), payload);
                 _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
@@ -112,18 +88,6 @@ public partial class TaskbarOverlayWindow : Window
     {
         _pendingAppDragSlot = null;
         _pendingAppDragActive = false;
-        _pendingGroupDragVm = null;
-        _pendingGroupDragActive = false;
-    }
-
-    private void GroupDragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not FrameworkElement fe || fe.DataContext is not UserGroupViewModel g)
-            return;
-
-        _pendingGroupDragVm = g;
-        _pendingGroupDragStart = e.GetPosition(this);
-        _pendingGroupDragActive = true;
     }
 
     private void StripGroup_PreviewDragOver(object sender, System.Windows.DragEventArgs e)
@@ -147,17 +111,7 @@ public partial class TaskbarOverlayWindow : Window
         if (sender is not FrameworkElement fe || fe.DataContext is not UserGroupViewModel targetVm)
             return;
 
-        if (p.Kind == StripDragKind.UserGroup)
-        {
-            if (string.Equals(p.SourceGroupId, targetVm.Settings.Id, StringComparison.Ordinal))
-                return;
-
-            vm.MoveGroupBefore(p.SourceGroupId, targetVm.Settings.Id);
-            e.Handled = true;
-            return;
-        }
-
-        if (p.Kind != StripDragKind.AppSlot || string.IsNullOrEmpty(p.AppKey))
+        if (string.IsNullOrEmpty(p.AppKey))
             return;
 
         var ic = FindVisualChild<ItemsControl>(fe, "AppSlotsItems");
