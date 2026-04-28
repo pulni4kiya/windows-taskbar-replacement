@@ -7,6 +7,10 @@ public sealed record AppWindowItem(
     int ProcessId,
     string? ProcessPath,
     string? ProcessName,
-    string Title
+    string Title,
+    string? AppUserModelId = null,
+    int? IdentityProcessId = null,
+    string? IdentityProcessPath = null,
+    string? IdentityProcessName = null
 );
 

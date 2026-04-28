@@ -81,6 +81,9 @@ internal static class NativeMethods
     internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     [DllImport("user32.dll")]
+    internal static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
     internal static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -197,5 +200,161 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool DestroyIcon(IntPtr hIcon);
+
+    // --- AppUserModelID (AUMID) interop ---
+
+    [Flags]
+    internal enum GETPROPERTYSTOREFLAGS : uint
+    {
+        GPS_DEFAULT = 0,
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct PROPERTYKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+
+        public PROPERTYKEY(Guid fmtid, uint pid)
+        {
+            this.fmtid = fmtid;
+            this.pid = pid;
+        }
+    }
+
+    // PKEY_AppUserModel_ID
+    internal static readonly PROPERTYKEY PKEY_AppUserModel_ID =
+        new(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct PROPVARIANT
+    {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public IntPtr pointerValue;
+    }
+
+    internal const ushort VT_LPWSTR = 31;
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IPropertyStore
+    {
+        uint GetCount(out uint cProps);
+        uint GetAt(uint iProp, out PROPERTYKEY pkey);
+        uint GetValue(ref PROPERTYKEY key, out PROPVARIANT pv);
+        uint SetValue(ref PROPERTYKEY key, ref PROPVARIANT propvar);
+        uint Commit();
+    }
+
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    internal static extern int SHGetPropertyStoreForWindow(
+        IntPtr hwnd,
+        ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore propertyStore);
+
+    [DllImport("ole32.dll")]
+    internal static extern int PropVariantClear(ref PROPVARIANT pvar);
+
+    internal static string? TryGetAppUserModelIdForWindow(IntPtr hwnd)
+    {
+        try
+        {
+            var iid = typeof(IPropertyStore).GUID;
+            var hr = SHGetPropertyStoreForWindow(hwnd, ref iid, out var store);
+            if (hr < 0 || store is null)
+                return null;
+
+            var key = PKEY_AppUserModel_ID;
+            hr = unchecked((int)store.GetValue(ref key, out var pv));
+            if (hr < 0)
+                return null;
+
+            try
+            {
+                if (pv.vt != VT_LPWSTR || pv.pointerValue == IntPtr.Zero)
+                    return null;
+
+                var s = Marshal.PtrToStringUni(pv.pointerValue);
+                return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+            }
+            finally
+            {
+                _ = PropVariantClear(ref pv);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // --- AppsFolder icon extraction (AUMID -> HBITMAP) ---
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SIZE
+    {
+        public int cx;
+        public int cy;
+
+        public SIZE(int cx, int cy)
+        {
+            this.cx = cx;
+            this.cy = cy;
+        }
+    }
+
+    [Flags]
+    internal enum SIIGBF
+    {
+        SIIGBF_RESIZETOFIT = 0x00,
+        SIIGBF_BIGGERSIZEOK = 0x01,
+        SIIGBF_ICONONLY = 0x04,
+    }
+
+    [ComImport]
+    [Guid("BCC18B79-BA16-442F-80C4-8A59C30C463B")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IShellItemImageFactory
+    {
+        int GetImage(SIZE size, SIIGBF flags, out IntPtr phbm);
+    }
+
+    // {1E87508D-89C2-42F0-8A7E-645A0F50CA58}
+    internal static readonly Guid FOLDERID_AppsFolder = new("1E87508D-89C2-42F0-8A7E-645A0F50CA58");
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern int SHCreateItemInKnownFolder(
+        [In] ref Guid kfid,
+        uint dwKFFlags,
+        [MarshalAs(UnmanagedType.LPWStr)] string? pszItem,
+        [In] ref Guid riid,
+        [MarshalAs(UnmanagedType.Interface)] out object ppv);
+
+    [DllImport("gdi32.dll")]
+    internal static extern bool DeleteObject(IntPtr hObject);
+
+    internal static IntPtr TryGetAppsFolderIconBitmap(string appUserModelId, int sizePx)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(appUserModelId))
+                return IntPtr.Zero;
+
+            var iid = typeof(IShellItemImageFactory).GUID;
+            var kfid = FOLDERID_AppsFolder;
+            var hr = SHCreateItemInKnownFolder(ref kfid, 0, appUserModelId.Trim(), ref iid, out var obj);
+            if (hr < 0 || obj is not IShellItemImageFactory factory)
+                return IntPtr.Zero;
+
+            var sz = new SIZE(sizePx, sizePx);
+            hr = factory.GetImage(sz, SIIGBF.SIIGBF_ICONONLY | SIIGBF.SIIGBF_BIGGERSIZEOK, out var hbm);
+            return hr < 0 ? IntPtr.Zero : hbm;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
 }
 
