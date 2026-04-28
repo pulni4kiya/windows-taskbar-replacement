@@ -26,6 +26,7 @@ internal static class NativeMethods
 
     internal const int WM_NCHITTEST = 0x0084;
     internal const int WM_MOUSEACTIVATE = 0x0021;
+    internal const uint WM_CLOSE = 0x0010;
     internal const int MA_NOACTIVATE = 3;
 
     internal const int HTCLIENT = 1;
@@ -144,6 +145,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool RegisterShellHookWindow(IntPtr hWnd);

@@ -121,6 +121,7 @@
                                             Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                                             Padding="0"
                                             PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
+                                            PreviewMouseUp="AppSlot_PreviewMouseUp"
                                             PreviewDragEnter="AppSlot_PreviewDragEnter"
                                             PreviewDragOver="AppSlot_PreviewDragOver"
                                             PreviewDragLeave="AppSlot_PreviewDragLeave"
@@ -241,6 +242,7 @@
                             VerticalAlignment="Stretch"
                             Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                             Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
+                            PreviewMouseUp="CollapsedGroup_PreviewMouseUp"
                             Command="{Binding DataContext.OpenCollapsedGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">

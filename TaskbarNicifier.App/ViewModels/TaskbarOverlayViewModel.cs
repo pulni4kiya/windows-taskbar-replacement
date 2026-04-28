@@ -36,6 +36,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private const int IntegratedReserveLeftPx = 220;
     private const int IntegratedReserveRightPx = 360;
     private const int StandaloneGapFromTaskbarPx = 12;
+    private const double InstancePickerScale = 1.1;
 
     private OverlayMode _mode = OverlayMode.Standalone;
     public OverlayMode Mode
@@ -923,6 +924,50 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ShowWindowPickerPopup(slot.Windows, placementTarget);
     }
 
+    public void LaunchNewInstance(AppSlotViewModel slot)
+    {
+        var item = slot.Windows.FirstOrDefault();
+        if (item is null)
+            return;
+
+        _ = TryLaunchNewInstance(item);
+    }
+
+    private static bool TryLaunchNewInstance(AppWindowItem item)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(item.AppUserModelId))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "explorer.exe",
+                    $"shell:AppsFolder\\{item.AppUserModelId!.Trim()}")
+                {
+                    UseShellExecute = true,
+                });
+                return true;
+            }
+
+            var path = !string.IsNullOrWhiteSpace(item.IdentityProcessPath)
+                ? item.IdentityProcessPath
+                : item.ProcessPath;
+            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+                return false;
+
+            var startInfo = new System.Diagnostics.ProcessStartInfo(path)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(path) ?? string.Empty,
+            };
+            System.Diagnostics.Process.Start(startInfo);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void OpenCollapsedGroupMenu(object? parameter)
     {
         if (_window is null || parameter is null)
@@ -977,12 +1022,21 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                 _groupPopup.IsOpen = false;
         }
 
+        void ClosePickerItem(AppWindowItem item)
+        {
+            WindowActivator.CloseWindow(item.Hwnd);
+            ClearAttentionForHwnd(item.Hwnd);
+            if (_groupPopup is not null)
+                _groupPopup.IsOpen = false;
+        }
+
         var list = new System.Windows.Controls.ListBox
         {
             ItemsSource = windows,
             DisplayMemberPath = nameof(AppWindowItem.Title),
             MinWidth = 260,
             MaxHeight = 300,
+            FontSize = SystemFonts.MessageFontSize * InstancePickerScale,
             AllowDrop = true,
         };
         list.PreviewDragEnter += (_, _) => NotifyExternalDragOver();
@@ -1012,6 +1066,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         {
             Setters =
             {
+                new Setter(System.Windows.Controls.Control.PaddingProperty, new Thickness(4.4, 2.2, 4.4, 2.2)),
+                new Setter(FrameworkElement.MinHeightProperty, 22.0),
                 new EventSetter(
                     System.Windows.Controls.ListBoxItem.MouseEnterEvent,
                     new System.Windows.Input.MouseEventHandler((sender, _) =>
@@ -1024,6 +1080,19 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                             hoveredHwnd = item.Hwnd;
                             hoverStartUtc = DateTime.UtcNow;
                             hoverTimer?.Start();
+                        }
+                    })),
+                new EventSetter(
+                    System.Windows.Controls.ListBoxItem.PreviewMouseUpEvent,
+                    new System.Windows.Input.MouseButtonEventHandler((sender, e) =>
+                    {
+                        if (e.ChangedButton != System.Windows.Input.MouseButton.Middle)
+                            return;
+
+                        if (sender is System.Windows.Controls.ListBoxItem { DataContext: AppWindowItem item })
+                        {
+                            ClosePickerItem(item);
+                            e.Handled = true;
                         }
                     })),
                 new EventSetter(

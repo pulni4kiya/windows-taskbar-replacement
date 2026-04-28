@@ -87,6 +87,36 @@ public partial class TaskbarOverlayWindow : Window
         _pendingAppDragActive = true;
     }
 
+    private void AppSlot_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle)
+            return;
+
+        if (DataContext is not TaskbarOverlayViewModel vm)
+            return;
+
+        if (sender is FrameworkElement { DataContext: AppSlotViewModel slot })
+        {
+            vm.LaunchNewInstance(slot);
+            e.Handled = true;
+        }
+    }
+
+    private void CollapsedGroup_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle)
+            return;
+
+        if (DataContext is not TaskbarOverlayViewModel vm)
+            return;
+
+        if (sender is FrameworkElement { DataContext: UserGroupViewModel group } && group.Slots.FirstOrDefault() is { } slot)
+        {
+            vm.LaunchNewInstance(slot);
+            e.Handled = true;
+        }
+    }
+
     private void RootWindow_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (_pendingAppDragActive && _pendingAppDragSlot is not null && e.LeftButton == MouseButtonState.Pressed)

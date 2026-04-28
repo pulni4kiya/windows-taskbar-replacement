@@ -25,6 +25,14 @@ public static class WindowActivator
         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_MINIMIZE);
     }
 
+    public static void CloseWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        NativeMethods.PostMessageW(hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
     public static void ActivateOrMinimizeIfForeground(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
