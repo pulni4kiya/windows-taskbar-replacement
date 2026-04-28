@@ -49,7 +49,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<UserGroupViewModel> StripGroups { get; } = new();
+    public ObservableCollection<UserGroupViewModel> LeftStripGroups { get; } = new();
+    public ObservableCollection<UserGroupViewModel> RightStripGroups { get; } = new();
 
     public string ModeGlyph => Mode == OverlayMode.Integrated ? "⧉" : "⬚";
     public string ModeToolTip => Mode == OverlayMode.Integrated ? "Integrated mode" : "Standalone mode";
@@ -460,36 +461,82 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
 
-        StripGroups.Clear();
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(gs);
+
+        LeftStripGroups.Clear();
+        RightStripGroups.Clear();
+
         var groupsList = gs.Groups;
-        for (var i = 0; i < groupsList.Count; i++)
+        var leftSettings = groupsList.Where(x => x.Alignment == GroupAlignment.Left).ToList();
+        var rightSettings = groupsList.Where(x => x.Alignment == GroupAlignment.Right).ToList();
+
+        void AddSide(
+            ObservableCollection<UserGroupViewModel> strip,
+            System.Collections.Generic.List<UserTaskbarGroupSettings> sideList,
+            bool isLeftSide)
         {
-            var ug = groupsList[i];
-            var slots = new ObservableCollection<AppSlotViewModel>();
-            foreach (var key in ug.OrderedAppKeys)
+            for (var i = 0; i < sideList.Count; i++)
             {
-                if (!liveByKey.TryGetValue(key, out var wins) || wins.Count == 0)
-                    continue;
+                var ug = sideList[i];
+                var slots = new ObservableCollection<AppSlotViewModel>();
+                foreach (var key in ug.OrderedAppKeys)
+                {
+                    if (!liveByKey.TryGetValue(key, out var wins) || wins.Count == 0)
+                        continue;
 
-                var icon = _iconProvider.TryGetIconForWindows(wins);
-                slots.Add(new AppSlotViewModel(
-                    appKey: key,
-                    displayName: AppIdentity.GetDisplayName(wins[0]),
-                    windows: wins,
-                    icon: icon,
-                    parentGroupId: ug.Id,
-                    canMoveGroupLeft: i > 0,
-                    canMoveGroupRight: i < groupsList.Count - 1));
+                    var icon = _iconProvider.TryGetIconForWindows(wins);
+                    var canMoveGroupLeft = isLeftSide
+                        ? i > 0
+                        : i > 0 || leftSettings.Count > 0;
+                    var canMoveGroupRight = isLeftSide
+                        ? i < sideList.Count - 1 || rightSettings.Count > 0
+                        : i < sideList.Count - 1 &&
+                          !(i + 1 < sideList.Count &&
+                            string.Equals(sideList[i + 1].Id, gs.HiddenGroupId, StringComparison.Ordinal));
+
+                    slots.Add(new AppSlotViewModel(
+                        appKey: key,
+                        displayName: AppIdentity.GetDisplayName(wins[0]),
+                        windows: wins,
+                        icon: icon,
+                        parentGroupId: ug.Id,
+                        canMoveGroupLeft: canMoveGroupLeft,
+                        canMoveGroupRight: canMoveGroupRight));
+                }
+
+                var isHiddenGroup = string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
+                bool canMoveLeft;
+                bool canMoveRight;
+                if (isHiddenGroup)
+                {
+                    canMoveLeft = false;
+                    canMoveRight = false;
+                }
+                else if (isLeftSide)
+                {
+                    canMoveLeft = i > 0;
+                    canMoveRight = i < sideList.Count - 1 || rightSettings.Count > 0;
+                }
+                else
+                {
+                    canMoveLeft = i > 0 || leftSettings.Count > 0;
+                    canMoveRight = i < sideList.Count - 1 &&
+                                   !(i + 1 < sideList.Count &&
+                                     string.Equals(sideList[i + 1].Id, gs.HiddenGroupId, StringComparison.Ordinal));
+                }
+
+                strip.Add(new UserGroupViewModel(
+                    ug,
+                    slots,
+                    CreateGroupBackgroundBrush(ug.Color),
+                    isHiddenGroup,
+                    canMoveLeft: canMoveLeft,
+                    canMoveRight: canMoveRight));
             }
-
-            StripGroups.Add(new UserGroupViewModel(
-                ug,
-                slots,
-                CreateGroupBackgroundBrush(ug.Color),
-                string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal),
-                canMoveLeft: i > 0,
-                canMoveRight: i < groupsList.Count - 1));
         }
+
+        AddSide(LeftStripGroups, leftSettings, isLeftSide: true);
+        AddSide(RightStripGroups, rightSettings, isLeftSide: false);
     }
 
     private static string? FindGroupIdContainingApp(GroupingSettings g, string appKey)
@@ -1026,13 +1073,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (groupId is null)
             return;
 
-        var list = _settings.Grouping.Groups;
-        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
-        if (idx <= 0)
-            return;
-
-        var beforeId = list[idx - 1].Id;
-        MoveGroupBefore(groupId, beforeId);
+        GroupingOrderOperations.MoveGroupLeft(_settings.Grouping, groupId);
+        BumpGroupingAndRebuild();
     }
 
     private void MoveGroupRight(object? parameter)
@@ -1041,13 +1083,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (groupId is null)
             return;
 
-        var list = _settings.Grouping.Groups;
-        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
-        if (idx < 0 || idx >= list.Count - 1)
-            return;
-
-        string? beforeId = idx + 2 < list.Count ? list[idx + 2].Id : null;
-        MoveGroupBefore(groupId, beforeId);
+        GroupingOrderOperations.MoveGroupRight(_settings.Grouping, groupId);
+        BumpGroupingAndRebuild();
     }
 
     /// <summary>Insert index at end of group's persisted key list (for drops onto collapsed / single-item UI).</summary>

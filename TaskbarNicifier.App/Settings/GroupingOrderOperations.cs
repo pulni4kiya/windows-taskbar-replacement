@@ -84,4 +84,101 @@ public static class GroupingOrderOperations
         else
             list.Insert(insert, item);
     }
+
+    /// <summary>Move a strip group left (within its alignment region or from first right to last left).</summary>
+    public static void MoveGroupLeft(GroupingSettings g, string groupId)
+    {
+        var list = g.Groups;
+        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        if (idx < 0)
+            return;
+
+        var item = list[idx];
+        if (string.Equals(item.Id, g.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        if (item.Alignment == GroupAlignment.Left)
+        {
+            if (idx <= 0)
+                return;
+            MoveGroupBefore(g, groupId, list[idx - 1].Id);
+            GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+            return;
+        }
+
+        // Right-aligned: first in right block moves to end of left block
+        var firstRightIdx = list.FindIndex(x => x.Alignment == GroupAlignment.Right);
+        if (idx == firstRightIdx)
+        {
+            item.Alignment = GroupAlignment.Left;
+            list.RemoveAt(idx);
+            var lastLeft = -1;
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i].Alignment == GroupAlignment.Left)
+                    lastLeft = i;
+            }
+
+            list.Insert(lastLeft + 1, item);
+            GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+            return;
+        }
+
+        MoveGroupBefore(g, groupId, list[idx - 1].Id);
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+    }
+
+    /// <summary>Move a strip group right (within its alignment region or from last left to first right).</summary>
+    public static void MoveGroupRight(GroupingSettings g, string groupId)
+    {
+        var list = g.Groups;
+        var idx = list.FindIndex(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        if (idx < 0)
+            return;
+
+        var item = list[idx];
+        if (string.Equals(item.Id, g.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        if (item.Alignment == GroupAlignment.Right)
+        {
+            if (idx >= list.Count - 1)
+                return;
+            if (string.Equals(list[idx + 1].Id, g.HiddenGroupId, StringComparison.Ordinal))
+                return;
+
+            var beforeId = idx + 2 < list.Count ? list[idx + 2].Id : null;
+            MoveGroupBefore(g, groupId, beforeId);
+            GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+            return;
+        }
+
+        // Left-aligned: last in left block moves to first right slot
+        var lastLeftIdx = -1;
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (list[i].Alignment == GroupAlignment.Left)
+                lastLeftIdx = i;
+        }
+
+        if (idx == lastLeftIdx)
+        {
+            item.Alignment = GroupAlignment.Right;
+            list.RemoveAt(idx);
+            var insert = list.FindIndex(x => x.Alignment == GroupAlignment.Right);
+            if (insert < 0)
+                list.Add(item);
+            else
+                list.Insert(insert, item);
+            GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+            return;
+        }
+
+        if (idx >= list.Count - 1)
+            return;
+
+        var beforeId2 = idx + 2 < list.Count ? list[idx + 2].Id : null;
+        MoveGroupBefore(g, groupId, beforeId2);
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+    }
 }

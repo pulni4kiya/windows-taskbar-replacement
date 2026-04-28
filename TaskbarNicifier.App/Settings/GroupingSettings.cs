@@ -8,6 +8,12 @@ public enum GroupDisplayType
     SingleItem = 1,
 }
 
+public enum GroupAlignment
+{
+    Left = 0,
+    Right = 1,
+}
+
 /// <summary>
 /// One user-defined taskbar group (order of <see cref="Groups"/> is strip order).
 /// </summary>
@@ -18,6 +24,8 @@ public sealed class UserTaskbarGroupSettings
     /// <summary>ARGB hex, e.g. #66000000 for semi-transparent chip.</summary>
     public string Color { get; set; } = "#40000000";
     public GroupDisplayType DisplayType { get; set; } = GroupDisplayType.Expanded;
+    /// <summary>Strip region: left-aligned groups first in <see cref="GroupingSettings.Groups"/>, then right-aligned.</summary>
+    public GroupAlignment Alignment { get; set; } = GroupAlignment.Left;
     /// <summary>Ordered app keys (see AppIdentity.GetAppKey). May include keys for closed apps.</summary>
     public List<string> OrderedAppKeys { get; set; } = new();
 }

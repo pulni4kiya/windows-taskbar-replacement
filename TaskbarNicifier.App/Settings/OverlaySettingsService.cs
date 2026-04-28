@@ -50,6 +50,7 @@ public sealed class OverlaySettingsService
     {
         GroupingSettingsBootstrap.EnsureGroupingContainer(s);
         GroupingSettingsBootstrap.EnsureDefaultGroups(s.Grouping);
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(s.Grouping);
         s.Grouping.LastNonHiddenGroupByAppKey ??= new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
