@@ -115,9 +115,10 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:AppSlotViewModel}">
                                     <Button VerticalAlignment="Stretch"
+                                            x:Name="AppSlotButton"
                                             Style="{StaticResource IconButtonStyle}"
                                             Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
-                                            Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
+                                            Padding="0"
                                             PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
                                             Command="{Binding DataContext.OpenAppSlotMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                                         <Button.CommandParameter>
@@ -175,22 +176,59 @@
                                                            TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Button.ToolTip>
-                                        <Image Source="{Binding Icon}"
-                                               Stretch="Uniform">
-                                            <Image.Width>
-                                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
-                                                </MultiBinding>
-                                            </Image.Width>
-                                            <Image.Height>
-                                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
-                                                </MultiBinding>
-                                            </Image.Height>
-                                        </Image>
+                                        <Grid>
+                                            <Border x:Name="FlashOverlay"
+                                                    CornerRadius="4"
+                                                    BorderThickness="0"
+                                                    Background="{Binding DataContext.FlashBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Opacity="0" />
+                                            <Border x:Name="HoverOverlay"
+                                                    CornerRadius="4"
+                                                    BorderThickness="0"
+                                                    Background="#99FFFFFF"
+                                                    Opacity="0"
+                                                    IsHitTestVisible="False" />
+                                            <Border Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}">
+                                                <Image Source="{Binding Icon}"
+                                                       Stretch="Uniform">
+                                                    <Image.Width>
+                                                        <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                        </MultiBinding>
+                                                    </Image.Width>
+                                                    <Image.Height>
+                                                        <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                        </MultiBinding>
+                                                    </Image.Height>
+                                                </Image>
+                                            </Border>
+                                        </Grid>
                                     </Button>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding ElementName=AppSlotButton, Path=IsMouseOver}" Value="True">
+                                            <Setter TargetName="HoverOverlay" Property="Opacity" Value="1" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsFlashing}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="FlashStoryboard">
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <DoubleAnimationUsingKeyFrames Storyboard.TargetName="FlashOverlay"
+                                                                                       Storyboard.TargetProperty="Opacity">
+                                                            <DiscreteDoubleKeyFrame KeyTime="0:0:0" Value="1" />
+                                                            <DiscreteDoubleKeyFrame KeyTime="0:0:0.5" Value="0" />
+                                                            <DiscreteDoubleKeyFrame KeyTime="0:0:1" Value="1" />
+                                                        </DoubleAnimationUsingKeyFrames>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="FlashStoryboard" />
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -446,6 +484,14 @@
                             <TextBlock Margin="0,10,0,0"
                                        Text="Taskbar color (hex, e.g. #FF202020)" />
                             <TextBox Text="{Binding TaskbarColorText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4,0,0"
+                                     Background="#FFFFFFFF"
+                                     Foreground="#FF222222"
+                                     BorderBrush="#FFAAAAAA" />
+
+                            <TextBlock Margin="0,10,0,0"
+                                       Text="Flash color (hex, e.g. #99FFFFFF)" />
+                            <TextBox Text="{Binding FlashColorText, UpdateSourceTrigger=PropertyChanged}"
                                      Margin="0,4,0,0"
                                      Background="#FFFFFFFF"
                                      Foreground="#FF222222"

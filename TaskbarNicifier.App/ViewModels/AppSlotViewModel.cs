@@ -14,7 +14,8 @@ public sealed class AppSlotViewModel
         ImageSource? icon,
         string parentGroupId,
         bool canMoveGroupLeft,
-        bool canMoveGroupRight)
+        bool canMoveGroupRight,
+        bool isFlashing)
     {
         AppKey = appKey;
         DisplayName = displayName;
@@ -23,6 +24,7 @@ public sealed class AppSlotViewModel
         ParentGroupId = parentGroupId;
         CanMoveGroupLeft = canMoveGroupLeft;
         CanMoveGroupRight = canMoveGroupRight;
+        IsFlashing = isFlashing;
     }
 
     public string AppKey { get; }
@@ -32,6 +34,7 @@ public sealed class AppSlotViewModel
     public string ParentGroupId { get; }
     public bool CanMoveGroupLeft { get; }
     public bool CanMoveGroupRight { get; }
+    public bool IsFlashing { get; }
 
     public string TooltipHeader => $"{DisplayName} ({Windows.Count})";
     public string TooltipBody => string.Join("\n", Windows.Select(w => w.Title));

@@ -7,9 +7,11 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
+using TaskbarNicifier.App.Interop;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 using TaskbarNicifier.App.Views.Converters;
@@ -76,6 +78,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private int _groupingVersion;
     private int _lastAppliedGroupingVersion = -1;
 
+    // Tracks windows that have requested attention (taskbar flash).
+    private readonly HashSet<IntPtr> _attentionHwnds = new();
+
     public TaskbarOverlayViewModel()
     {
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
@@ -95,6 +100,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         _settings = _settingsService.Load();
         _taskbarColorText = _settings.Layout.TaskbarColor;
+        _flashColorText = _settings.Layout.FlashColor;
 
         _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -305,6 +311,35 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
     }
 
+    private string _flashColorText;
+    public string FlashColorText
+    {
+        get => _flashColorText;
+        set
+        {
+            if (_flashColorText == value) return;
+            _flashColorText = value;
+            OnPropertyChanged();
+
+            if (TryParseColor(value, out _))
+            {
+                _settings.Layout.FlashColor = value.Trim();
+                OnPropertyChanged(nameof(FlashBrush));
+                PersistLayoutSettingsDebounced();
+            }
+        }
+    }
+
+    public Brush FlashBrush
+    {
+        get
+        {
+            var brush = new SolidColorBrush(ParseFlashColorOrDefault(_settings.Layout.FlashColor));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
     private void ToggleSettingsPopup()
     {
         IsSettingsOpen = !IsSettingsOpen;
@@ -357,6 +392,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return c;
 
         return (Color)ColorConverter.ConvertFromString("#FF202020")!;
+    }
+
+    private static Color ParseFlashColorOrDefault(string? input)
+    {
+        if (TryParseColor(input, out var c))
+            return c;
+
+        return (Color)ColorConverter.ConvertFromString("#99FFFFFF")!;
     }
 
     private static Brush CreateGroupBackgroundBrush(string? colorHex)
@@ -413,9 +456,17 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private void Refresh()
     {
         ApplyFullscreenVisibility();
+        // EnsureIntegratedTopmostOnRefresh();
 
         var windows = _windowEnumerator.GetOpenAppWindows();
         windows = ApplyContextFilters(windows);
+
+        // Drop attention markers for windows that no longer exist.
+        if (_attentionHwnds.Count > 0)
+        {
+            var live = windows.Select(w => w.Hwnd).ToHashSet();
+            _attentionHwnds.RemoveWhere(h => !live.Contains(h));
+        }
 
         var fp = ComputeLiveFingerprint(windows);
         if (fp == _lastLiveFingerprint && _groupingVersion == _lastAppliedGroupingVersion)
@@ -425,6 +476,36 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         _lastAppliedGroupingVersion = _groupingVersion;
 
         RebuildStripGroups(windows);
+    }
+
+    private void EnsureIntegratedTopmostOnRefresh()
+    {
+        if (_window is null)
+            return;
+
+        if (Mode != OverlayMode.Integrated)
+            return;
+
+        if (_window.Visibility != Visibility.Visible)
+            return;
+
+        // Keep the managed state consistent too.
+        if (!_window.Topmost)
+            _window.Topmost = true;
+
+        var hwnd = new WindowInteropHelper(_window).Handle;
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        // Reassert z-order without activating/focusing.
+        NativeMethods.SetWindowPos(
+            hwnd,
+            NativeMethods.HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
     }
 
     private void RebuildStripGroups(System.Collections.Generic.List<AppWindowItem> liveWindows)
@@ -485,6 +566,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         continue;
 
                     var icon = _iconProvider.TryGetIconForWindows(wins);
+                    var isFlashing = _attentionHwnds.Count > 0 && wins.Any(w => _attentionHwnds.Contains(w.Hwnd));
                     var canMoveGroupLeft = isLeftSide
                         ? i > 0
                         : i > 0 || leftSettings.Count > 0;
@@ -501,7 +583,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         icon: icon,
                         parentGroupId: ug.Id,
                         canMoveGroupLeft: canMoveGroupLeft,
-                        canMoveGroupRight: canMoveGroupRight));
+                        canMoveGroupRight: canMoveGroupRight,
+                        isFlashing: isFlashing));
                 }
 
                 var isHiddenGroup = string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
@@ -745,6 +828,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (slot.Windows.Count == 1)
         {
             WindowActivator.FocusWindow(slot.Windows[0].Hwnd);
+            ClearAttentionForSlot(slot);
             return;
         }
 
@@ -805,6 +889,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             if (list.SelectedItem is AppWindowItem item)
             {
                 WindowActivator.FocusWindow(item.Hwnd);
+                ClearAttentionForHwnd(item.Hwnd);
                 _groupPopup!.IsOpen = false;
             }
         };
@@ -825,6 +910,57 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         };
 
         _groupPopup.IsOpen = true;
+    }
+
+    public void OnShellWindowFlash(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        // Ignore our own overlay window (defensive).
+        if (_window is not null && new WindowInteropHelper(_window).Handle == hwnd)
+            return;
+
+        if (_attentionHwnds.Add(hwnd))
+        {
+            // Force rebuild even if fingerprint didn't change so the UI can reflect attention state.
+            _groupingVersion++;
+            Refresh();
+        }
+    }
+
+    public void OnShellWindowActivated(IntPtr hwnd)
+    {
+        // When a window becomes active, it should no longer be "requesting attention".
+        ClearAttentionForHwnd(hwnd);
+    }
+
+    private void ClearAttentionForHwnd(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        if (_attentionHwnds.Remove(hwnd))
+        {
+            _groupingVersion++;
+            Refresh();
+        }
+    }
+
+    private void ClearAttentionForSlot(AppSlotViewModel slot)
+    {
+        if (_attentionHwnds.Count == 0)
+            return;
+
+        var removedAny = false;
+        foreach (var w in slot.Windows)
+            removedAny |= _attentionHwnds.Remove(w.Hwnd);
+
+        if (removedAny)
+        {
+            _groupingVersion++;
+            Refresh();
+        }
     }
 
     private void HideApp(object? parameter)

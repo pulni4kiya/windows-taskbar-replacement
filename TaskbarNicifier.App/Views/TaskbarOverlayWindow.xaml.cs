@@ -12,6 +12,8 @@ namespace TaskbarNicifier.App.Views;
 public partial class TaskbarOverlayWindow : Window
 {
     private HwndSource? _source;
+    private uint _shellHookMsg;
+    private bool _shellHookRegistered;
 
     private AppSlotViewModel? _pendingAppDragSlot;
     private System.Windows.Point _pendingAppDragStart;
@@ -26,6 +28,8 @@ public partial class TaskbarOverlayWindow : Window
             _source = (HwndSource?)PresentationSource.FromVisual(this);
             _source?.AddHook(WndProc);
 
+            TryRegisterShellHook();
+
             if (DataContext is TaskbarOverlayViewModel vm)
             {
                 vm.AttachWindow(this);
@@ -37,6 +41,8 @@ public partial class TaskbarOverlayWindow : Window
         {
             _source?.RemoveHook(WndProc);
             _source = null;
+
+            TryDeregisterShellHook();
 
             if (DataContext is TaskbarOverlayViewModel vm)
             {
@@ -197,6 +203,23 @@ public partial class TaskbarOverlayWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (_shellHookMsg != 0 && (uint)msg == _shellHookMsg)
+        {
+            var evt = wParam.ToInt32();
+            if (evt == NativeMethods.HSHELL_FLASH || evt == NativeMethods.HSHELL_FLASHW)
+            {
+                if (DataContext is TaskbarOverlayViewModel vm)
+                    vm.OnShellWindowFlash(lParam);
+            }
+            else if (evt == NativeMethods.HSHELL_WINDOWACTIVATED || evt == NativeMethods.HSHELL_RUDEAPPACTIVATED)
+            {
+                if (DataContext is TaskbarOverlayViewModel vm)
+                    vm.OnShellWindowActivated(lParam);
+            }
+
+            // Don't mark handled; we only observe.
+        }
+
         if (msg == NativeMethods.WM_NCHITTEST)
         {
             if (DataContext is TaskbarOverlayViewModel)
@@ -211,6 +234,33 @@ public partial class TaskbarOverlayWindow : Window
         }
 
         return IntPtr.Zero;
+    }
+
+    private void TryRegisterShellHook()
+    {
+        if (_shellHookRegistered)
+            return;
+
+        if (_source is null)
+            return;
+
+        _shellHookMsg = NativeMethods.RegisterWindowMessageW("SHELLHOOK");
+        if (_shellHookMsg == 0)
+            return;
+
+        _shellHookRegistered = NativeMethods.RegisterShellHookWindow(_source.Handle);
+    }
+
+    private void TryDeregisterShellHook()
+    {
+        if (!_shellHookRegistered)
+            return;
+
+        if (_source is null)
+            return;
+
+        NativeMethods.DeregisterShellHookWindow(_source.Handle);
+        _shellHookRegistered = false;
     }
 
     private int HitTestResize(IntPtr lParam)

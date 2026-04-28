@@ -11,6 +11,12 @@ internal static class NativeMethods
     internal const int WS_EX_TOOLWINDOW = 0x00000080;
     internal const int WS_EX_APPWINDOW = 0x00040000;
 
+    // Shell hook
+    internal const int HSHELL_FLASH = 0x8006;
+    internal const int HSHELL_FLASHW = 0x800C;
+    internal const int HSHELL_WINDOWACTIVATED = 4;
+    internal const int HSHELL_RUDEAPPACTIVATED = 0x8004;
+
     internal const uint GA_ROOTOWNER = 3;
 
     internal const int SW_RESTORE = 9;
@@ -36,6 +42,13 @@ internal static class NativeMethods
     internal const uint SHGFI_ICON = 0x000000100;
     internal const uint SHGFI_SMALLICON = 0x000000001;
     internal const uint SHGFI_LARGEICON = 0x000000000;
+
+    // SetWindowPos / z-order helpers
+    internal static readonly IntPtr HWND_TOPMOST = new(-1);
+    internal const uint SWP_NOSIZE = 0x0001;
+    internal const uint SWP_NOMOVE = 0x0002;
+    internal const uint SWP_NOACTIVATE = 0x0010;
+    internal const uint SWP_SHOWWINDOW = 0x0040;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct RECT
@@ -124,6 +137,25 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool RegisterShellHookWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool DeregisterShellHookWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern uint RegisterWindowMessageW(string lpString);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int X,
+        int Y,
+        int cx,
+        int cy,
+        uint uFlags);
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern int GetWindowLongW(IntPtr hWnd, int nIndex);

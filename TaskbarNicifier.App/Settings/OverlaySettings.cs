@@ -23,5 +23,7 @@ public sealed class LayoutSettings
     /// <summary>Horizontal gap after each strip group (px). Null in older settings files means default.</summary>
     public double? GroupSpacing { get; set; }
     public string TaskbarColor { get; set; } = "#FF202020";
+    /// <summary>Flash highlight color (ARGB hex or any WPF ColorConverter format).</summary>
+    public string FlashColor { get; set; } = "#99FFFFFF";
 }
 
