@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using TaskbarNicifier.App.Interop;
+using TaskbarNicifier.App.Shell;
 using TaskbarNicifier.App.ViewModels;
 
 namespace TaskbarNicifier.App.Views;
@@ -14,14 +15,27 @@ public partial class TaskbarOverlayWindow : Window
     private HwndSource? _source;
     private uint _shellHookMsg;
     private bool _shellHookRegistered;
+    private System.ComponentModel.INotifyPropertyChanged? _vmNotify;
 
     private AppSlotViewModel? _pendingAppDragSlot;
     private System.Windows.Point _pendingAppDragStart;
     private bool _pendingAppDragActive;
 
+    private readonly System.Windows.Threading.DispatcherTimer _dragHoverTimer;
+    private DateTime _dragHoverEnteredAtUtc;
+    private AppSlotViewModel? _dragHoverSlot;
+    private FrameworkElement? _dragHoverPlacementTarget;
+    private bool _dragHoverTriggered;
+
     public TaskbarOverlayWindow()
     {
         InitializeComponent();
+
+        _dragHoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(25),
+        };
+        _dragHoverTimer.Tick += (_, _) => OnDragHoverTimerTick();
 
         Loaded += (_, _) =>
         {
@@ -35,6 +49,9 @@ public partial class TaskbarOverlayWindow : Window
                 vm.AttachWindow(this);
                 vm.Start();
             }
+
+            HookViewModelForModeChanges();
+            ApplyExtendedWindowStyles();
         };
 
         Closed += (_, _) =>
@@ -49,6 +66,8 @@ public partial class TaskbarOverlayWindow : Window
                 vm.Stop();
                 vm.DetachWindow();
             }
+
+            UnhookViewModelForModeChanges();
         };
     }
 
@@ -103,6 +122,76 @@ public partial class TaskbarOverlayWindow : Window
 
         e.Effects = DragDropEffects.Move;
         e.Handled = true;
+    }
+
+    private void AppSlot_PreviewDragEnter(object sender, DragEventArgs e)
+        => HandleAppSlotDragHover(sender, e);
+
+    private void AppSlot_PreviewDragOver(object sender, DragEventArgs e)
+        => HandleAppSlotDragHover(sender, e);
+
+    private void AppSlot_PreviewDragLeave(object sender, DragEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext == _dragHoverSlot)
+            ClearDragHoverState();
+    }
+
+    private void HandleAppSlotDragHover(object sender, DragEventArgs e)
+    {
+        // Don't interfere with the app-strip reordering drag.
+        if (e.Data.GetDataPresent(typeof(StripDragPayload)))
+            return;
+
+        if (DataContext is not TaskbarOverlayViewModel vm)
+            return;
+
+        if (sender is not FrameworkElement fe || fe.DataContext is not AppSlotViewModel slot)
+            return;
+
+        vm.NotifyExternalDragOver();
+
+        if (!ReferenceEquals(_dragHoverSlot, slot))
+        {
+            _dragHoverSlot = slot;
+            _dragHoverPlacementTarget = fe;
+            _dragHoverEnteredAtUtc = DateTime.UtcNow;
+            _dragHoverTriggered = false;
+            _dragHoverTimer.Start();
+        }
+
+        e.Handled = false;
+    }
+
+    private void OnDragHoverTimerTick()
+    {
+        if (_dragHoverTriggered || _dragHoverSlot is null || _dragHoverPlacementTarget is null)
+        {
+            _dragHoverTimer.Stop();
+            return;
+        }
+
+        if (DataContext is not TaskbarOverlayViewModel vm)
+        {
+            _dragHoverTimer.Stop();
+            return;
+        }
+
+        var delay = vm.DragHoverDelay;
+        if (DateTime.UtcNow - _dragHoverEnteredAtUtc < delay)
+            return;
+
+        _dragHoverTriggered = true;
+        _dragHoverTimer.Stop();
+        vm.DragHoverOpenSlot(_dragHoverSlot, _dragHoverPlacementTarget);
+    }
+
+    private void ClearDragHoverState()
+    {
+        _dragHoverTimer.Stop();
+        _dragHoverSlot = null;
+        _dragHoverPlacementTarget = null;
+        _dragHoverTriggered = false;
+        _dragHoverEnteredAtUtc = default;
     }
 
     private void StripGroup_Drop(object sender, System.Windows.DragEventArgs e)
@@ -233,6 +322,15 @@ public partial class TaskbarOverlayWindow : Window
             }
         }
 
+        if (msg == NativeMethods.WM_MOUSEACTIVATE)
+        {
+            if (DataContext is TaskbarOverlayViewModel vm && vm.Mode == OverlayMode.Integrated)
+            {
+                handled = true;
+                return new IntPtr(NativeMethods.MA_NOACTIVATE);
+            }
+        }
+
         return IntPtr.Zero;
     }
 
@@ -287,5 +385,50 @@ public partial class TaskbarOverlayWindow : Window
         if (onRight) return NativeMethods.HTRIGHT;
 
         return NativeMethods.HTCLIENT;
+    }
+
+    private void ApplyExtendedWindowStyles()
+    {
+        if (_source is null)
+            return;
+
+        var hwnd = _source.Handle;
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        var ex = NativeMethods.GetWindowExStyle(hwnd).ToInt64();
+        ex |= NativeMethods.WS_EX_TOOLWINDOW;
+        ex &= ~NativeMethods.WS_EX_APPWINDOW;
+
+        if (DataContext is TaskbarOverlayViewModel vm && vm.Mode == OverlayMode.Integrated)
+            ex |= NativeMethods.WS_EX_NOACTIVATE;
+        else
+            ex &= ~NativeMethods.WS_EX_NOACTIVATE;
+
+        NativeMethods.SetWindowExStyle(hwnd, new IntPtr(ex));
+    }
+
+    private void HookViewModelForModeChanges()
+    {
+        UnhookViewModelForModeChanges();
+
+        if (DataContext is System.ComponentModel.INotifyPropertyChanged npc)
+        {
+            _vmNotify = npc;
+            _vmNotify.PropertyChanged += OnVmPropertyChanged;
+        }
+    }
+
+    private void UnhookViewModelForModeChanges()
+    {
+        if (_vmNotify is not null)
+            _vmNotify.PropertyChanged -= OnVmPropertyChanged;
+        _vmNotify = null;
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TaskbarOverlayViewModel.Mode))
+            ApplyExtendedWindowStyles();
     }
 }

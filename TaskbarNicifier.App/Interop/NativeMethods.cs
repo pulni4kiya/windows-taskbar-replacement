@@ -10,6 +10,7 @@ internal static class NativeMethods
     internal const int GWL_EXSTYLE = -20;
     internal const int WS_EX_TOOLWINDOW = 0x00000080;
     internal const int WS_EX_APPWINDOW = 0x00040000;
+    internal const int WS_EX_NOACTIVATE = 0x08000000;
 
     // Shell hook
     internal const int HSHELL_FLASH = 0x8006;
@@ -21,8 +22,11 @@ internal static class NativeMethods
 
     internal const int SW_RESTORE = 9;
     internal const int SW_SHOW = 5;
+    internal const int SW_MINIMIZE = 6;
 
     internal const int WM_NCHITTEST = 0x0084;
+    internal const int WM_MOUSEACTIVATE = 0x0021;
+    internal const int MA_NOACTIVATE = 3;
 
     internal const int HTCLIENT = 1;
     internal const int HTLEFT = 10;
@@ -159,6 +163,26 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern int GetWindowLongW(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern int SetWindowLongW(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    internal static extern IntPtr GetWindowLongPtrW(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    internal static extern IntPtr SetWindowLongPtrW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    internal static IntPtr GetWindowExStyle(IntPtr hWnd)
+        => IntPtr.Size == 8 ? GetWindowLongPtrW(hWnd, GWL_EXSTYLE) : new IntPtr(GetWindowLongW(hWnd, GWL_EXSTYLE));
+
+    internal static void SetWindowExStyle(IntPtr hWnd, IntPtr exStyle)
+    {
+        if (IntPtr.Size == 8)
+            _ = SetWindowLongPtrW(hWnd, GWL_EXSTYLE, exStyle);
+        else
+            _ = SetWindowLongW(hWnd, GWL_EXSTYLE, exStyle.ToInt32());
+    }
 
     [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW", SetLastError = true)]
     internal static extern IntPtr GetClassLongPtrW(IntPtr hWnd, int nIndex);

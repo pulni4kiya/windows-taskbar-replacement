@@ -2,10 +2,12 @@ namespace TaskbarNicifier.App.Settings;
 
 public sealed class OverlaySettings
 {
+    public AppMode AppMode { get; set; } = AppMode.Normal;
     public IntegratedOverlaySettings Integrated { get; set; } = new();
     public LayoutSettings Layout { get; set; } = new();
     public int RefreshIntervalMs { get; set; } = 800;
     public GroupingSettings Grouping { get; set; } = new();
+    public double DragHoverDelaySeconds { get; set; } = 0.3;
 }
 
 public sealed class IntegratedOverlaySettings

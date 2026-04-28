@@ -57,6 +57,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public string ModeGlyph => Mode == OverlayMode.Integrated ? "⧉" : "⬚";
     public string ModeToolTip => Mode == OverlayMode.Integrated ? "Integrated mode" : "Standalone mode";
 
+    public bool IsDebugMode => _settings.AppMode == AppMode.Debug;
+    public Visibility ModeToggleVisibility => IsDebugMode ? Visibility.Visible : Visibility.Collapsed;
+
     public RelayCommand ToggleModeCommand { get; }
     public RelayCommand OpenAppSlotMenuCommand { get; }
     public RelayCommand OpenCollapsedGroupMenuCommand { get; }
@@ -81,6 +84,15 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     // Tracks windows that have requested attention (taskbar flash).
     private readonly HashSet<IntPtr> _attentionHwnds = new();
 
+    private DateTime _externalDragLastSeenUtc;
+    public void NotifyExternalDragOver()
+    {
+        _externalDragLastSeenUtc = DateTime.UtcNow;
+    }
+
+    public bool IsExternalDragActive
+        => DateTime.UtcNow - _externalDragLastSeenUtc < TimeSpan.FromMilliseconds(250);
+
     public TaskbarOverlayViewModel()
     {
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
@@ -99,6 +111,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
 
         _settings = _settingsService.Load();
+        ApplyAppModeToOverlayMode();
         _taskbarColorText = _settings.Layout.TaskbarColor;
         _flashColorText = _settings.Layout.FlashColor;
 
@@ -282,6 +295,30 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
     }
 
+    public double DragHoverDelaySeconds
+    {
+        get => GetClampedDragHoverDelaySeconds(_settings.DragHoverDelaySeconds);
+        set
+        {
+            var v = GetClampedDragHoverDelaySeconds(value);
+            if (Math.Abs(_settings.DragHoverDelaySeconds - v) < 0.0001) return;
+            _settings.DragHoverDelaySeconds = v;
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    public TimeSpan DragHoverDelay => TimeSpan.FromSeconds(DragHoverDelaySeconds);
+
+    private static double GetClampedDragHoverDelaySeconds(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return 0.3;
+        if (value < 0.05) return 0.05;
+        if (value > 2.0) return 2.0;
+        return value;
+    }
+
     private string _taskbarColorText;
     public string TaskbarColorText
     {
@@ -444,10 +481,36 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private void ToggleMode()
     {
+        if (!IsDebugMode)
+            return;
+
         var previousMode = Mode;
         Mode = Mode == OverlayMode.Standalone ? OverlayMode.Integrated : OverlayMode.Standalone;
 
         ApplyModeWindowSettings(previousMode);
+    }
+
+    public AppMode AppMode
+    {
+        get => _settings.AppMode;
+        set
+        {
+            if (_settings.AppMode == value) return;
+            _settings.AppMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsDebugMode));
+            OnPropertyChanged(nameof(ModeToggleVisibility));
+
+            ApplyAppModeToOverlayMode();
+            ApplyModeWindowSettings();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    private void ApplyAppModeToOverlayMode()
+    {
+        if (!IsDebugMode)
+            Mode = OverlayMode.Integrated;
     }
 
     private string ComputeLiveFingerprint(System.Collections.Generic.List<AppWindowItem> windows)
@@ -827,12 +890,30 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (slot.Windows.Count == 1)
         {
-            WindowActivator.FocusWindow(slot.Windows[0].Hwnd);
+            WindowActivator.ActivateOrMinimizeIfForeground(slot.Windows[0].Hwnd);
             ClearAttentionForSlot(slot);
             return;
         }
 
         ShowWindowPickerPopup(slot.Windows, placementTarget ?? _window);
+    }
+
+    public void DragHoverOpenSlot(AppSlotViewModel slot, FrameworkElement placementTarget)
+    {
+        if (_window is null)
+            return;
+
+        if (slot.Windows.Count == 0)
+            return;
+
+        if (slot.Windows.Count == 1)
+        {
+            WindowActivator.FocusWindow(slot.Windows[0].Hwnd);
+            ClearAttentionForSlot(slot);
+            return;
+        }
+
+        ShowWindowPickerPopup(slot.Windows, placementTarget);
     }
 
     private void OpenCollapsedGroupMenu(object? parameter)
@@ -868,7 +949,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (orderedWindows.Count == 1)
         {
-            WindowActivator.FocusWindow(orderedWindows[0].Hwnd);
+            WindowActivator.ActivateOrMinimizeIfForeground(orderedWindows[0].Hwnd);
             return;
         }
 
@@ -877,12 +958,60 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private void ShowWindowPickerPopup(IReadOnlyList<AppWindowItem> windows, FrameworkElement placementTarget)
     {
+        System.Windows.Threading.DispatcherTimer? hoverTimer = null;
+        DateTime hoverStartUtc = default;
+        IntPtr hoveredHwnd = IntPtr.Zero;
+
         var list = new System.Windows.Controls.ListBox
         {
             ItemsSource = windows,
             DisplayMemberPath = nameof(AppWindowItem.Title),
             MinWidth = 260,
             MaxHeight = 300,
+            AllowDrop = true,
+        };
+        list.PreviewDragEnter += (_, _) => NotifyExternalDragOver();
+        list.PreviewDragOver += (_, e) =>
+        {
+            NotifyExternalDragOver();
+
+            // While dragging, update the hovered item from the pointer position.
+            var pos = e.GetPosition(list);
+            var hit = System.Windows.Media.VisualTreeHelper.HitTest(list, pos);
+            if (hit?.VisualHit is not null)
+            {
+                var container = System.Windows.Controls.ItemsControl.ContainerFromElement(list, hit.VisualHit)
+                    as System.Windows.Controls.ListBoxItem;
+                if (container?.DataContext is AppWindowItem item)
+                {
+                    if (hoveredHwnd != item.Hwnd)
+                    {
+                        hoveredHwnd = item.Hwnd;
+                        hoverStartUtc = DateTime.UtcNow;
+                        hoverTimer?.Start();
+                    }
+                }
+            }
+        };
+        list.ItemContainerStyle = new Style(typeof(System.Windows.Controls.ListBoxItem))
+        {
+            Setters =
+            {
+                new EventSetter(
+                    System.Windows.Controls.ListBoxItem.MouseEnterEvent,
+                    new System.Windows.Input.MouseEventHandler((sender, _) =>
+                    {
+                        if (!IsExternalDragActive)
+                            return;
+
+                        if (sender is System.Windows.Controls.ListBoxItem { DataContext: AppWindowItem item })
+                        {
+                            hoveredHwnd = item.Hwnd;
+                            hoverStartUtc = DateTime.UtcNow;
+                            hoverTimer?.Start();
+                        }
+                    })),
+            },
         };
         list.SelectionChanged += (_, _) =>
         {
@@ -909,6 +1038,33 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             },
         };
 
+        hoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(25),
+        };
+        hoverTimer.Tick += (_, _) =>
+        {
+            if (_groupPopup is null || !_groupPopup.IsOpen)
+            {
+                hoverTimer!.Stop();
+                return;
+            }
+
+            if (!IsExternalDragActive)
+                return;
+
+            if (hoveredHwnd == IntPtr.Zero)
+                return;
+
+            if (DateTime.UtcNow - hoverStartUtc < DragHoverDelay)
+                return;
+
+            hoverTimer!.Stop();
+            WindowActivator.FocusWindow(hoveredHwnd);
+            ClearAttentionForHwnd(hoveredHwnd);
+            _groupPopup.IsOpen = false;
+        };
+
         _groupPopup.IsOpen = true;
     }
 
@@ -933,6 +1089,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     {
         // When a window becomes active, it should no longer be "requesting attention".
         ClearAttentionForHwnd(hwnd);
+        EnsureIntegratedTopmostOnRefresh();
     }
 
     private void ClearAttentionForHwnd(IntPtr hwnd)
