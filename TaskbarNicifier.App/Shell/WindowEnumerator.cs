@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using TaskbarNicifier.App.Interop;
 
@@ -78,7 +77,7 @@ public sealed class WindowEnumerator
     {
         // MVP grouping key: process path if available, else process name, else pid.
         return windows
-            .GroupBy(w => GetGroupKey(w))
+            .GroupBy(w => AppIdentity.GetAppKey(w))
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
             {
@@ -86,30 +85,12 @@ public sealed class WindowEnumerator
                 return new AppWindowGroup
                 {
                     GroupKey = g.Key,
-                    DisplayName = GetDisplayName(first),
+                    DisplayName = AppIdentity.GetDisplayName(first),
                     Windows = g.OrderByDescending(x => x.Title, StringComparer.OrdinalIgnoreCase).ToList(),
                     Icon = null,
                 };
             })
             .ToList();
-    }
-
-    private static string GetGroupKey(AppWindowItem w)
-    {
-        if (!string.IsNullOrWhiteSpace(w.ProcessPath))
-            return w.ProcessPath!;
-        if (!string.IsNullOrWhiteSpace(w.ProcessName))
-            return w.ProcessName!;
-        return $"pid:{w.ProcessId}";
-    }
-
-    private static string GetDisplayName(AppWindowItem w)
-    {
-        if (!string.IsNullOrWhiteSpace(w.ProcessPath))
-            return Path.GetFileNameWithoutExtension(w.ProcessPath);
-        if (!string.IsNullOrWhiteSpace(w.ProcessName))
-            return w.ProcessName!;
-        return $"PID {w.ProcessId}";
     }
 
     private static string GetWindowTitle(IntPtr hwnd)

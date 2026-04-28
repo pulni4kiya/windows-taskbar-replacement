@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -7,6 +8,8 @@ using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Brush = System.Windows.Media.Brush;
+using Color = System.Windows.Media.Color;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 using TaskbarNicifier.App.Views.Converters;
@@ -46,24 +49,49 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<AppWindowGroup> AppGroups { get; } = new();
+    public ObservableCollection<UserGroupViewModel> LeftStripGroups { get; } = new();
+    public ObservableCollection<UserGroupViewModel> RightStripGroups { get; } = new();
 
     public string ModeGlyph => Mode == OverlayMode.Integrated ? "⧉" : "⬚";
     public string ModeToolTip => Mode == OverlayMode.Integrated ? "Integrated mode" : "Standalone mode";
 
     public RelayCommand ToggleModeCommand { get; }
-    public RelayCommand OpenGroupMenuCommand { get; }
+    public RelayCommand OpenAppSlotMenuCommand { get; }
+    public RelayCommand OpenCollapsedGroupMenuCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
     public RelayCommand ExitCommand { get; }
+    public RelayCommand HideAppCommand { get; }
+    public RelayCommand UnhideAppCommand { get; }
+    public RelayCommand UnhideGroupCommand { get; }
+    public RelayCommand OpenGroupSettingsCommand { get; }
+    public RelayCommand CloseGroupSettingsCommand { get; }
+    public RelayCommand PickEditingGroupColorCommand { get; }
+    public RelayCommand AddUserStripGroupCommand { get; }
+    public RelayCommand MoveGroupLeftCommand { get; }
+    public RelayCommand MoveGroupRightCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private string? _lastLiveFingerprint;
+    private int _groupingVersion;
+    private int _lastAppliedGroupingVersion = -1;
 
     public TaskbarOverlayViewModel()
     {
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
-        OpenGroupMenuCommand = new RelayCommand(p => OpenGroupMenu(p));
+        OpenAppSlotMenuCommand = new RelayCommand(p => OpenAppSlotMenu(p));
+        OpenCollapsedGroupMenuCommand = new RelayCommand(p => OpenCollapsedGroupMenu(p));
         OpenSettingsCommand = new RelayCommand(_ => ToggleSettingsPopup());
         ExitCommand = new RelayCommand(_ => ExitApplication());
+        HideAppCommand = new RelayCommand(p => HideApp(p));
+        UnhideAppCommand = new RelayCommand(p => UnhideApp(p));
+        UnhideGroupCommand = new RelayCommand(p => UnhideGroup(p));
+        OpenGroupSettingsCommand = new RelayCommand(p => OpenGroupSettings(p));
+        CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
+        PickEditingGroupColorCommand = new RelayCommand(_ => PickEditingGroupColor());
+        AddUserStripGroupCommand = new RelayCommand(_ => AddUserStripGroup());
+        MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
+        MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
 
         _settings = _settingsService.Load();
         _taskbarColorText = _settings.Layout.TaskbarColor;
@@ -97,6 +125,101 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
     }
 
+    private bool _isGroupSettingsOpen;
+    public bool IsGroupSettingsOpen
+    {
+        get => _isGroupSettingsOpen;
+        set
+        {
+            if (_isGroupSettingsOpen == value) return;
+            _isGroupSettingsOpen = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private UserTaskbarGroupSettings? _editingGroup;
+    public UserTaskbarGroupSettings? EditingGroup
+    {
+        get => _editingGroup;
+        private set
+        {
+            if (ReferenceEquals(_editingGroup, value)) return;
+            _editingGroup = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(EditingGroupDisplayName));
+            OnPropertyChanged(nameof(EditingGroupColorText));
+            OnPropertyChanged(nameof(EditingGroupDisplayType));
+        }
+    }
+
+    public string EditingGroupDisplayName
+    {
+        get => EditingGroup?.Name ?? "";
+        set
+        {
+            if (EditingGroup is null) return;
+            if (EditingGroup.Name == value) return;
+            EditingGroup.Name = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string EditingGroupColorText
+    {
+        get => EditingGroup?.Color ?? "#40000000";
+        set
+        {
+            if (EditingGroup is null) return;
+            if (EditingGroup.Color == value) return;
+            EditingGroup.Color = value.Trim();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(EditingGroupBrushPreview));
+        }
+    }
+
+    public GroupDisplayType EditingGroupDisplayType
+    {
+        get
+        {
+            if (EditingGroup is null)
+                return GroupDisplayType.Expanded;
+
+            return string.Equals(EditingGroup.Id, _settings.Grouping.HiddenGroupId, StringComparison.Ordinal)
+                ? GroupDisplayType.SingleItem
+                : EditingGroup.DisplayType;
+        }
+        set
+        {
+            if (EditingGroup is null) return;
+            if (string.Equals(EditingGroup.Id, _settings.Grouping.HiddenGroupId, StringComparison.Ordinal) &&
+                value != GroupDisplayType.SingleItem)
+            {
+                EditingGroup.DisplayType = GroupDisplayType.SingleItem;
+                OnPropertyChanged();
+                return;
+            }
+
+            if (EditingGroup.DisplayType == value) return;
+            EditingGroup.DisplayType = value;
+            OnPropertyChanged();
+            BumpGroupingAndRebuild();
+        }
+    }
+
+    public Brush EditingGroupBrushPreview
+    {
+        get
+        {
+            var c = ParseColorOrDefault(EditingGroup?.Color ?? "#40000000");
+            var b = new SolidColorBrush(c);
+            b.Freeze();
+            return b;
+        }
+    }
+
+    public IEnumerable<GroupDisplayType> AllGroupDisplayTypes { get; } =
+        Enum.GetValues<GroupDisplayType>();
+
     public double IconPadding
     {
         get => _settings.Layout.IconPadding;
@@ -119,6 +242,21 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             var v = Math.Max(0, value);
             if (Math.Abs(_settings.Layout.IconSpacing - v) < 0.001) return;
             _settings.Layout.IconSpacing = v;
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    private const double DefaultGroupSpacingPx = 8;
+
+    public double GroupSpacing
+    {
+        get => _settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx;
+        set
+        {
+            var v = Math.Max(0, value);
+            if (Math.Abs((_settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx) - v) < 0.001) return;
+            _settings.Layout.GroupSpacing = v;
             OnPropertyChanged();
             PersistLayoutSettingsDebounced();
         }
@@ -218,10 +356,16 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (TryParseColor(input, out var c))
             return c;
 
-        return (Color)ColorConverter.ConvertFromString("#FF202020");
+        return (Color)ColorConverter.ConvertFromString("#FF202020")!;
     }
 
-    private string? _lastGroupsFingerprint;
+    private static Brush CreateGroupBackgroundBrush(string? colorHex)
+    {
+        var c = ParseColorOrDefault(string.IsNullOrWhiteSpace(colorHex) ? "#40000000" : colorHex);
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
 
     public void AttachWindow(Window window)
     {
@@ -263,48 +407,151 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ApplyModeWindowSettings(previousMode);
     }
 
+    private string ComputeLiveFingerprint(System.Collections.Generic.List<AppWindowItem> windows)
+        => string.Join("|", windows.Select(w => $"{AppIdentity.GetAppKey(w)}:{w.Hwnd.ToInt64():X}:{w.Title}")) + "|gv:" + _groupingVersion;
+
     private void Refresh()
     {
         ApplyFullscreenVisibility();
 
         var windows = _windowEnumerator.GetOpenAppWindows();
         windows = ApplyContextFilters(windows);
-        var groups = _windowEnumerator.GroupWindows(windows);
 
-        var fingerprint = string.Join("|", groups.Select(g =>
-            $"{g.GroupKey}:{g.Windows.Count}:{string.Join(",", g.Windows.Select(w => w.Title))}"));
-        if (fingerprint == _lastGroupsFingerprint)
+        var fp = ComputeLiveFingerprint(windows);
+        if (fp == _lastLiveFingerprint && _groupingVersion == _lastAppliedGroupingVersion)
             return;
-        _lastGroupsFingerprint = fingerprint;
 
-        // Ensure icons are filled (best-effort).
-        for (var i = 0; i < groups.Count; i++)
+        _lastLiveFingerprint = fp;
+        _lastAppliedGroupingVersion = _groupingVersion;
+
+        RebuildStripGroups(windows);
+    }
+
+    private void RebuildStripGroups(System.Collections.Generic.List<AppWindowItem> liveWindows)
+    {
+        GroupingSettingsBootstrap.EnsureGroupingContainer(_settings);
+        GroupingSettingsBootstrap.EnsureDefaultGroups(_settings.Grouping);
+        var gs = _settings.Grouping;
+        gs.LastNonHiddenGroupByAppKey ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
+
+        var liveByKey = liveWindows
+            .GroupBy(w => AppIdentity.GetAppKey(w))
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => x.Title, StringComparer.OrdinalIgnoreCase).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var defaultG = GroupingSettingsBootstrap.FindGroup(gs, gs.DefaultGroupId);
+        if (defaultG is null)
+            return;
+
+        if (defaultG.OrderedAppKeys.Count == 0 && liveByKey.Count > 0)
         {
-            var g = groups[i];
-            if (g.Icon is not null)
-                continue;
-
-            var icon = _iconProvider.TryGetIconForGroup(g);
-            if (icon is null)
-                continue;
-
-            groups[i] = new AppWindowGroup
-            {
-                GroupKey = g.GroupKey,
-                DisplayName = g.DisplayName,
-                Windows = g.Windows,
-                Icon = icon,
-            };
+            foreach (var k in liveByKey.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+                defaultG.OrderedAppKeys.Add(k);
         }
 
-        AppGroups.Clear();
-        foreach (var g in groups)
-            AppGroups.Add(g);
+        foreach (var appKey in liveByKey.Keys.ToList())
+        {
+            if (FindGroupIdContainingApp(gs, appKey) is null)
+                defaultG.OrderedAppKeys.Add(appKey);
+        }
+
+        GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
+
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(gs);
+
+        LeftStripGroups.Clear();
+        RightStripGroups.Clear();
+
+        var groupsList = gs.Groups;
+        var leftSettings = groupsList.Where(x => x.Alignment == GroupAlignment.Left).ToList();
+        var rightSettings = groupsList.Where(x => x.Alignment == GroupAlignment.Right).ToList();
+
+        void AddSide(
+            ObservableCollection<UserGroupViewModel> strip,
+            System.Collections.Generic.List<UserTaskbarGroupSettings> sideList,
+            bool isLeftSide)
+        {
+            for (var i = 0; i < sideList.Count; i++)
+            {
+                var ug = sideList[i];
+                var slots = new ObservableCollection<AppSlotViewModel>();
+                foreach (var key in ug.OrderedAppKeys)
+                {
+                    if (!liveByKey.TryGetValue(key, out var wins) || wins.Count == 0)
+                        continue;
+
+                    var icon = _iconProvider.TryGetIconForWindows(wins);
+                    var canMoveGroupLeft = isLeftSide
+                        ? i > 0
+                        : i > 0 || leftSettings.Count > 0;
+                    var canMoveGroupRight = isLeftSide
+                        ? i < sideList.Count - 1 || rightSettings.Count > 0
+                        : i < sideList.Count - 1 &&
+                          !(i + 1 < sideList.Count &&
+                            string.Equals(sideList[i + 1].Id, gs.HiddenGroupId, StringComparison.Ordinal));
+
+                    slots.Add(new AppSlotViewModel(
+                        appKey: key,
+                        displayName: AppIdentity.GetDisplayName(wins[0]),
+                        windows: wins,
+                        icon: icon,
+                        parentGroupId: ug.Id,
+                        canMoveGroupLeft: canMoveGroupLeft,
+                        canMoveGroupRight: canMoveGroupRight));
+                }
+
+                var isHiddenGroup = string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
+                bool canMoveLeft;
+                bool canMoveRight;
+                if (isHiddenGroup)
+                {
+                    canMoveLeft = false;
+                    canMoveRight = false;
+                }
+                else if (isLeftSide)
+                {
+                    canMoveLeft = i > 0;
+                    canMoveRight = i < sideList.Count - 1 || rightSettings.Count > 0;
+                }
+                else
+                {
+                    canMoveLeft = i > 0 || leftSettings.Count > 0;
+                    canMoveRight = i < sideList.Count - 1 &&
+                                   !(i + 1 < sideList.Count &&
+                                     string.Equals(sideList[i + 1].Id, gs.HiddenGroupId, StringComparison.Ordinal));
+                }
+
+                strip.Add(new UserGroupViewModel(
+                    ug,
+                    slots,
+                    CreateGroupBackgroundBrush(ug.Color),
+                    isHiddenGroup,
+                    canMoveLeft: canMoveLeft,
+                    canMoveRight: canMoveRight));
+            }
+        }
+
+        AddSide(LeftStripGroups, leftSettings, isLeftSide: true);
+        AddSide(RightStripGroups, rightSettings, isLeftSide: false);
+    }
+
+    private static string? FindGroupIdContainingApp(GroupingSettings g, string appKey)
+    {
+        foreach (var gr in g.Groups)
+        {
+            if (gr.OrderedAppKeys.Any(k => string.Equals(k, appKey, StringComparison.OrdinalIgnoreCase)))
+                return gr.Id;
+        }
+
+        return null;
     }
 
     private System.Collections.Generic.List<AppWindowItem> ApplyContextFilters(System.Collections.Generic.List<AppWindowItem> windows)
     {
-        // Filter to the monitor where the primary taskbar lives.
         var taskbarHwnd = _taskbarPlacement.GetPrimaryTaskbarHwnd();
         var taskbarMonitor = taskbarHwnd == IntPtr.Zero
             ? IntPtr.Zero
@@ -360,7 +607,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
             if (previousMode == OverlayMode.Integrated && _taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
             {
-                // Nudge it away from the taskbar so it doesn't sit behind it.
                 var screenH = SystemParameters.PrimaryScreenHeight;
                 var isBottomTaskbar = rect.Top > screenH / 2;
 
@@ -389,7 +635,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (Mode != OverlayMode.Integrated)
             return;
 
-        // Debounce writes while the user is dragging/resizing.
         _persistDebounceTimer.Stop();
         _persistDebounceTimer.Start();
     }
@@ -403,7 +648,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (s.Left is null || s.Top is null || s.Width is null || s.Height is null)
             return false;
 
-        // Validate: must overlap the taskbar monitor area and be a sensible size.
         var width = Math.Max(_window.MinWidth, s.Width.Value);
         var height = Math.Max(_window.MinHeight, s.Height.Value);
         if (width < 100 || height < 40)
@@ -412,7 +656,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         var rect = new Rect(s.Left.Value, s.Top.Value, width, height);
         var taskbar = new Rect(taskbarRect.Left, taskbarRect.Top, taskbarRect.Right - taskbarRect.Left, taskbarRect.Bottom - taskbarRect.Top);
 
-        // Require some intersection with the taskbar, so it doesn't end up on a different monitor.
         if (!rect.IntersectsWith(taskbar))
             return false;
 
@@ -434,12 +677,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         var monitorBottom = mi.rcMonitor.Bottom;
         var newTop = desiredTop;
 
-        // If the window extends below the taskbar monitor, pull it up so bottoms align.
         var bottom = desiredTop + height;
         if (bottom > monitorBottom)
             newTop = monitorBottom - height;
 
-        // Also keep it within the monitor.
         if (newTop < mi.rcMonitor.Top)
             newTop = mi.rcMonitor.Top;
 
@@ -451,8 +692,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return;
 
-        // Reuse the same debounced persistence for both integrated bounds and layout/interval settings.
-
         if (Mode == OverlayMode.Integrated)
         {
             _settings.Integrated.Left = _window.Left;
@@ -460,6 +699,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _settings.Integrated.Width = _window.Width;
             _settings.Integrated.Height = _window.Height;
         }
+
         _settingsService.Save(_settings);
     }
 
@@ -481,37 +721,81 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _window.Visibility = desiredVisibility;
     }
 
-    private void OpenGroupMenu(object? parameter)
+    private void OpenAppSlotMenu(object? parameter)
     {
         if (_window is null || parameter is null)
             return;
 
-        AppWindowGroup? group = null;
-        System.Windows.FrameworkElement? placementTarget = null;
+        AppSlotViewModel? slot = null;
+        FrameworkElement? placementTarget = null;
 
-        if (parameter is GroupClickContext ctx)
+        if (parameter is AppSlotClickContext ctx)
         {
-            group = ctx.Group;
+            slot = ctx.Slot;
             placementTarget = ctx.PlacementTarget;
         }
         else
         {
-            group = parameter as AppWindowGroup;
+            slot = parameter as AppSlotViewModel;
         }
 
-        if (group is null)
+        if (slot is null)
             return;
 
-        if (group.Windows.Count == 1)
+        if (slot.Windows.Count == 1)
         {
-            WindowActivator.FocusWindow(group.Windows[0].Hwnd);
+            WindowActivator.FocusWindow(slot.Windows[0].Hwnd);
             return;
         }
 
-        // Basic popup for the MVP; positioning and styling can be refined.
+        ShowWindowPickerPopup(slot.Windows, placementTarget ?? _window);
+    }
+
+    private void OpenCollapsedGroupMenu(object? parameter)
+    {
+        if (_window is null || parameter is null)
+            return;
+
+        UserGroupViewModel? groupVm = null;
+        FrameworkElement? placementTarget = null;
+
+        if (parameter is CollapsedGroupClickContext ctx)
+        {
+            groupVm = ctx.Group;
+            placementTarget = ctx.PlacementTarget;
+        }
+        else
+        {
+            groupVm = parameter as UserGroupViewModel;
+        }
+
+        if (groupVm is null)
+            return;
+
+        var orderedWindows = new List<AppWindowItem>();
+        foreach (var s in groupVm.Slots)
+        {
+            foreach (var w in s.Windows.OrderByDescending(x => x.Title, StringComparer.OrdinalIgnoreCase))
+                orderedWindows.Add(w);
+        }
+
+        if (orderedWindows.Count == 0)
+            return;
+
+        if (orderedWindows.Count == 1)
+        {
+            WindowActivator.FocusWindow(orderedWindows[0].Hwnd);
+            return;
+        }
+
+        ShowWindowPickerPopup(orderedWindows, placementTarget ?? _window);
+    }
+
+    private void ShowWindowPickerPopup(IReadOnlyList<AppWindowItem> windows, FrameworkElement placementTarget)
+    {
         var list = new System.Windows.Controls.ListBox
         {
-            ItemsSource = group.Windows,
+            ItemsSource = windows,
             DisplayMemberPath = nameof(AppWindowItem.Title),
             MinWidth = 260,
             MaxHeight = 300,
@@ -527,23 +811,320 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         _groupPopup = new Popup
         {
-            PlacementTarget = placementTarget ?? _window,
+            PlacementTarget = placementTarget,
             Placement = PlacementMode.Top,
             VerticalOffset = 6,
             StaysOpen = false,
             Child = new System.Windows.Controls.Border
             {
-                Background = System.Windows.Media.Brushes.Black,
+                Background = Brushes.Black,
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(8),
                 Child = list,
-            }
+            },
         };
 
         _groupPopup.IsOpen = true;
     }
 
+    private void HideApp(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot)
+            return;
+
+        var gs = _settings.Grouping;
+        if (string.Equals(slot.ParentGroupId, gs.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        gs.LastNonHiddenGroupByAppKey[slot.AppKey] = slot.ParentGroupId;
+        var hidden = GroupingSettingsBootstrap.FindGroup(gs, gs.HiddenGroupId);
+        if (hidden is null)
+            return;
+
+        GroupingOrderOperations.MoveAppKeyToGroupAtIndex(gs, slot.AppKey, gs.HiddenGroupId, hidden.OrderedAppKeys.Count);
+        BumpGroupingAndRebuild();
+    }
+
+    private void UnhideApp(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot)
+            return;
+
+        var gs = _settings.Grouping;
+        if (!string.Equals(slot.ParentGroupId, gs.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        var targetId = gs.DefaultGroupId;
+        if (gs.LastNonHiddenGroupByAppKey.TryGetValue(slot.AppKey, out var remembered))
+        {
+            if (GroupingSettingsBootstrap.FindGroup(gs, remembered) is not null &&
+                !string.Equals(remembered, gs.HiddenGroupId, StringComparison.Ordinal))
+            {
+                targetId = remembered;
+            }
+        }
+
+        var target = GroupingSettingsBootstrap.FindGroup(gs, targetId) ?? GroupingSettingsBootstrap.FindGroup(gs, gs.DefaultGroupId);
+        if (target is null)
+            return;
+
+        GroupingOrderOperations.MoveAppKeyToGroupAtIndex(gs, slot.AppKey, target.Id, target.OrderedAppKeys.Count);
+        BumpGroupingAndRebuild();
+    }
+
+    private void UnhideGroup(object? parameter)
+    {
+        if (parameter is not UserGroupViewModel groupVm)
+            return;
+
+        var gs = _settings.Grouping;
+        if (!string.Equals(groupVm.Settings.Id, gs.HiddenGroupId, StringComparison.Ordinal))
+            return;
+
+        foreach (var slot in groupVm.Slots.ToList())
+            MoveHiddenAppToRememberedGroup(slot);
+
+        BumpGroupingAndRebuild();
+    }
+
+    private void MoveHiddenAppToRememberedGroup(AppSlotViewModel slot)
+    {
+        var gs = _settings.Grouping;
+        var targetId = gs.DefaultGroupId;
+        if (gs.LastNonHiddenGroupByAppKey.TryGetValue(slot.AppKey, out var remembered))
+        {
+            if (GroupingSettingsBootstrap.FindGroup(gs, remembered) is not null &&
+                !string.Equals(remembered, gs.HiddenGroupId, StringComparison.Ordinal))
+            {
+                targetId = remembered;
+            }
+        }
+
+        var target = GroupingSettingsBootstrap.FindGroup(gs, targetId) ??
+                     GroupingSettingsBootstrap.FindGroup(gs, gs.DefaultGroupId);
+        if (target is null)
+            return;
+
+        GroupingOrderOperations.MoveAppKeyToGroupAtIndex(gs, slot.AppKey, target.Id, target.OrderedAppKeys.Count);
+    }
+
+    private void OpenGroupSettings(object? parameter)
+    {
+        UserTaskbarGroupSettings? row = parameter as UserTaskbarGroupSettings;
+        if (row is null && parameter is UserGroupViewModel gvm)
+            row = gvm.Settings;
+        if (row is null && parameter is string gid)
+            row = GroupingSettingsBootstrap.FindGroup(_settings.Grouping, gid);
+
+        if (row is null)
+            return;
+
+        EditingGroup = row;
+        IsGroupSettingsOpen = true;
+        OnPropertyChanged(nameof(EditingGroupDisplayName));
+        OnPropertyChanged(nameof(EditingGroupColorText));
+        OnPropertyChanged(nameof(EditingGroupDisplayType));
+        OnPropertyChanged(nameof(EditingGroupBrushPreview));
+    }
+
+    private void CloseGroupSettings()
+    {
+        EditingGroup = null;
+        IsGroupSettingsOpen = false;
+        BumpGroupingAndRebuild();
+    }
+
+    /// <summary>Called when the group settings popup closes (e.g. click outside).</summary>
+    public void OnGroupSettingsPopupClosed()
+    {
+        if (EditingGroup is null)
+            return;
+
+        EditingGroup = null;
+        OnPropertyChanged(nameof(EditingGroupDisplayName));
+        OnPropertyChanged(nameof(EditingGroupColorText));
+        OnPropertyChanged(nameof(EditingGroupDisplayType));
+        OnPropertyChanged(nameof(EditingGroupBrushPreview));
+        BumpGroupingAndRebuild();
+    }
+
+    private void AddUserStripGroup()
+    {
+        var gs = _settings.Grouping;
+        GroupingSettingsBootstrap.EnsureDefaultGroups(gs);
+
+        var id = Guid.NewGuid().ToString("N");
+        var row = new UserTaskbarGroupSettings
+        {
+            Id = id,
+            Name = "New group",
+            Color = "#40000000",
+            DisplayType = GroupDisplayType.Expanded,
+        };
+
+        var hiddenIdx = gs.Groups.FindIndex(x => string.Equals(x.Id, gs.HiddenGroupId, StringComparison.Ordinal));
+        if (hiddenIdx >= 0)
+            gs.Groups.Insert(hiddenIdx, row);
+        else
+            gs.Groups.Add(row);
+
+        BumpGroupingAndRebuild();
+    }
+
+    private void PickEditingGroupColor()
+    {
+        if (EditingGroup is null)
+            return;
+
+        using var dlg = new System.Windows.Forms.ColorDialog();
+        if (TryParseColor(EditingGroup.Color, out var c))
+            dlg.Color = System.Drawing.Color.FromArgb(c.A, c.R, c.G, c.B);
+
+        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+            return;
+
+        var wpf = System.Windows.Media.Color.FromArgb(dlg.Color.A, dlg.Color.R, dlg.Color.G, dlg.Color.B);
+        EditingGroup.Color = wpf.ToString();
+        OnPropertyChanged(nameof(EditingGroupColorText));
+        OnPropertyChanged(nameof(EditingGroupBrushPreview));
+    }
+
+    public void BumpGroupingAndRebuild()
+    {
+        _groupingVersion++;
+        var windows = _windowEnumerator.GetOpenAppWindows();
+        windows = ApplyContextFilters(windows);
+        _lastLiveFingerprint = null;
+        Refresh();
+        PersistLayoutSettingsDebounced();
+    }
+
+    public void ReorderAppsInGroup(string groupId, IReadOnlyList<string> visibleKeysNewOrder)
+    {
+        var gs = _settings.Grouping;
+        var g = GroupingSettingsBootstrap.FindGroup(gs, groupId);
+        if (g is null)
+            return;
+
+        var windows = ApplyContextFilters(_windowEnumerator.GetOpenAppWindows());
+        var liveKeys = windows.Select(AppIdentity.GetAppKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var liveInGroup = new HashSet<string>(
+            g.OrderedAppKeys.Where(k => liveKeys.Contains(k)),
+            StringComparer.OrdinalIgnoreCase);
+
+        GroupingOrderOperations.ReorderVisibleKeysInPlace(g.OrderedAppKeys, liveInGroup, visibleKeysNewOrder);
+        BumpGroupingAndRebuild();
+    }
+
+    public void MoveAppToGroup(string appKey, string targetGroupId, int insertIndex)
+    {
+        var gs = _settings.Grouping;
+        var srcId = FindGroupIdContainingApp(gs, appKey);
+        if (srcId is null)
+            return;
+        MoveAppToGroupAtUiIndex(appKey, srcId, targetGroupId, insertIndex);
+    }
+
+    /// <summary>Move an app to a group using a UI insert index (same-group moves adjust for removal).</summary>
+    public void MoveAppToGroupAtUiIndex(string appKey, string sourceGroupId, string targetGroupId, int insertIndexFromUi)
+    {
+        var gs = _settings.Grouping;
+        var src = GroupingSettingsBootstrap.FindGroup(gs, sourceGroupId);
+        var tgt = GroupingSettingsBootstrap.FindGroup(gs, targetGroupId);
+        if (src is null || tgt is null)
+            return;
+
+        var oldIndex = src.OrderedAppKeys.FindIndex(k => string.Equals(k, appKey, StringComparison.OrdinalIgnoreCase));
+        GroupingOrderOperations.RemoveAppKeyFromAllGroups(gs, appKey);
+
+        var idx = insertIndexFromUi;
+        if (string.Equals(src.Id, tgt.Id, StringComparison.OrdinalIgnoreCase) &&
+            oldIndex >= 0 &&
+            oldIndex < idx)
+        {
+            idx--;
+        }
+
+        idx = Math.Clamp(idx, 0, tgt.OrderedAppKeys.Count);
+        tgt.OrderedAppKeys.Insert(idx, appKey);
+        BumpGroupingAndRebuild();
+    }
+
+    public void MoveGroupBefore(string groupIdToMove, string? beforeGroupId)
+    {
+        GroupingOrderOperations.MoveGroupBefore(_settings.Grouping, groupIdToMove, beforeGroupId);
+        BumpGroupingAndRebuild();
+    }
+
+    private static string? ResolveGroupIdForReorder(object? parameter)
+    {
+        return parameter switch
+        {
+            UserGroupViewModel g => g.Settings.Id,
+            AppSlotViewModel s => s.ParentGroupId,
+            string id when !string.IsNullOrEmpty(id) => id,
+            _ => null,
+        };
+    }
+
+    private void MoveGroupLeft(object? parameter)
+    {
+        var groupId = ResolveGroupIdForReorder(parameter);
+        if (groupId is null)
+            return;
+
+        GroupingOrderOperations.MoveGroupLeft(_settings.Grouping, groupId);
+        BumpGroupingAndRebuild();
+    }
+
+    private void MoveGroupRight(object? parameter)
+    {
+        var groupId = ResolveGroupIdForReorder(parameter);
+        if (groupId is null)
+            return;
+
+        GroupingOrderOperations.MoveGroupRight(_settings.Grouping, groupId);
+        BumpGroupingAndRebuild();
+    }
+
+    /// <summary>Insert index at end of group's persisted key list (for drops onto collapsed / single-item UI).</summary>
+    public int GetGroupTailInsertIndex(string targetGroupId)
+    {
+        var g = GroupingSettingsBootstrap.FindGroup(_settings.Grouping, targetGroupId);
+        return g?.OrderedAppKeys.Count ?? 0;
+    }
+
+    /// <summary>Maps a horizontal hit-test index over live slot buttons to an index in the full persisted key list.</summary>
+    public int ResolvePersistedInsertIndexForAppDrop(string targetGroupId, string appKey, string sourceGroupId, int visualInsertIndex)
+    {
+        var g = GroupingSettingsBootstrap.FindGroup(_settings.Grouping, targetGroupId);
+        if (g is null)
+            return 0;
+
+        var windows = ApplyContextFilters(_windowEnumerator.GetOpenAppWindows());
+        var liveKeys = windows.Select(AppIdentity.GetAppKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var liveInGroupOrdered = g.OrderedAppKeys.Where(k => liveKeys.Contains(k)).ToList();
+        var work = liveInGroupOrdered
+            .Where(k => !string.Equals(k, appKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        visualInsertIndex = Math.Clamp(visualInsertIndex, 0, work.Count);
+        if (visualInsertIndex >= work.Count)
+        {
+            if (work.Count == 0)
+                return g.OrderedAppKeys.Count;
+
+            var lastKey = work[^1];
+            var lastIdx = g.OrderedAppKeys.FindIndex(k => string.Equals(k, lastKey, StringComparison.OrdinalIgnoreCase));
+            return lastIdx < 0 ? g.OrderedAppKeys.Count : lastIdx + 1;
+        }
+
+        var anchorKey = work[visualInsertIndex];
+        var idx = g.OrderedAppKeys.FindIndex(k => string.Equals(k, anchorKey, StringComparison.OrdinalIgnoreCase));
+        return idx < 0 ? g.OrderedAppKeys.Count : idx;
+    }
+
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
-

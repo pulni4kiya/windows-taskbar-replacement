@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TaskbarNicifier.App.Settings;
 
@@ -9,6 +10,7 @@ public sealed class OverlaySettingsService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     public string SettingsPath { get; }
@@ -24,15 +26,32 @@ public sealed class OverlaySettingsService
         try
         {
             if (!File.Exists(SettingsPath))
-                return new OverlaySettings();
+                return CreateDefaultSettings();
 
             var json = File.ReadAllText(SettingsPath);
-            return JsonSerializer.Deserialize<OverlaySettings>(json, JsonOptions) ?? new OverlaySettings();
+            var s = JsonSerializer.Deserialize<OverlaySettings>(json, JsonOptions) ?? new OverlaySettings();
+            NormalizeGrouping(s);
+            return s;
         }
         catch
         {
-            return new OverlaySettings();
+            return CreateDefaultSettings();
         }
+    }
+
+    private static OverlaySettings CreateDefaultSettings()
+    {
+        var s = new OverlaySettings();
+        NormalizeGrouping(s);
+        return s;
+    }
+
+    private static void NormalizeGrouping(OverlaySettings s)
+    {
+        GroupingSettingsBootstrap.EnsureGroupingContainer(s);
+        GroupingSettingsBootstrap.EnsureDefaultGroups(s.Grouping);
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(s.Grouping);
+        s.Grouping.LastNonHiddenGroupByAppKey ??= new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public void Save(OverlaySettings settings)

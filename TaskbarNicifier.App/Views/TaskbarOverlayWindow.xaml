@@ -1,4 +1,5 @@
 <Window x:Class="TaskbarNicifier.App.Views.TaskbarOverlayWindow"
+        x:Name="RootWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -16,16 +17,297 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="Transparent"
-        AllowsTransparency="True">
+        AllowsTransparency="True"
+        PreviewMouseMove="RootWindow_PreviewMouseMove"
+        PreviewMouseLeftButtonUp="RootWindow_PreviewMouseLeftButtonUp">
     <Window.Resources>
         <conv:DoubleToUniformThicknessConverter x:Key="DoubleToUniformThickness" />
         <conv:DoubleToRightMarginConverter x:Key="DoubleToRightMargin" />
         <conv:ButtonIconSizeConverter x:Key="ButtonIconSize" />
-        <conv:GroupClickContextConverter x:Key="GroupClickContext" />
+        <conv:AppSlotClickContextConverter x:Key="AppSlotClickContext" />
+        <conv:CollapsedGroupClickContextConverter x:Key="CollapsedGroupClickContext" />
         <Style TargetType="{x:Type ToolTip}">
             <Setter Property="ToolTipService.InitialShowDelay" Value="400" />
             <Setter Property="ToolTipService.ShowDuration" Value="20000" />
         </Style>
+        <Style x:Key="IconButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate DataType="{x:Type vm:UserGroupViewModel}">
+            <Border x:Name="GroupBorder"
+                    Margin="{Binding DataContext.GroupSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                    Padding="2"
+                    CornerRadius="10"
+                    Background="{Binding GroupBackground}"
+                    AllowDrop="True"
+                    PreviewDragOver="StripGroup_PreviewDragOver"
+                    Drop="StripGroup_Drop">
+                <Border.ContextMenu>
+                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="Move group left"
+                                  Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanMoveLeft}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <MenuItem Header="Move group right"
+                                  Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanMoveRight}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="Group settings…"
+                                  Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding Settings.Id}" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <DockPanel LastChildFill="True">
+                    <StackPanel x:Name="ExpandedStrip"
+                                Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSingleItemDisplay}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <ItemsControl x:Name="AppSlotsItems"
+                                      ItemsSource="{Binding Slots}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:AppSlotViewModel}">
+                                    <Button VerticalAlignment="Stretch"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                                            Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
+                                            PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
+                                            Command="{Binding DataContext.OpenAppSlotMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                        <Button.CommandParameter>
+                                            <MultiBinding Converter="{StaticResource AppSlotClickContext}">
+                                                <Binding />
+                                                <Binding RelativeSource="{RelativeSource Self}" />
+                                            </MultiBinding>
+                                        </Button.CommandParameter>
+                                        <Button.ContextMenu>
+                                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                <MenuItem Header="Hide"
+                                                          Command="{Binding DataContext.HideAppCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}" />
+                                                <Separator />
+                                                <MenuItem Header="Move group left"
+                                                          Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanMoveGroupLeft}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <MenuItem Header="Move group right"
+                                                          Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanMoveGroupRight}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <Separator />
+                                                <MenuItem Header="Group settings…"
+                                                          Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding ParentGroupId}" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <Button.ToolTip>
+                                            <StackPanel MaxWidth="420">
+                                                <TextBlock Text="{Binding TooltipHeader}"
+                                                           FontWeight="SemiBold"
+                                                           Margin="0,0,0,4" />
+                                                <TextBlock Text="{Binding TooltipBody}"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Button.ToolTip>
+                                        <Image Source="{Binding Icon}"
+                                               Stretch="Uniform">
+                                            <Image.Width>
+                                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                </MultiBinding>
+                                            </Image.Width>
+                                            <Image.Height>
+                                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                </MultiBinding>
+                                            </Image.Height>
+                                        </Image>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <Button x:Name="CollapsedGroupButton"
+                            VerticalAlignment="Stretch"
+                            Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                            Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
+                            Command="{Binding DataContext.OpenCollapsedGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSingleItemDisplay}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.CommandParameter>
+                            <MultiBinding Converter="{StaticResource CollapsedGroupClickContext}">
+                                <Binding />
+                                <Binding RelativeSource="{RelativeSource Self}" />
+                            </MultiBinding>
+                        </Button.CommandParameter>
+                        <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="Move group left"
+                                          Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanMoveLeft}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                <MenuItem Header="Move group right"
+                                          Command="{Binding DataContext.MoveGroupRightCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanMoveRight}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                <MenuItem Header="Unhide all"
+                                          Command="{Binding DataContext.UnhideGroupCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHiddenGroup}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
+                                <MenuItem Header="Unhide app"
+                                          ItemsSource="{Binding Slots}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHiddenGroup}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                    <MenuItem.ItemContainerStyle>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Header" Value="{Binding DisplayName}" />
+                                            <Setter Property="Command" Value="{Binding DataContext.UnhideAppCommand, Source={x:Reference RootWindow}}" />
+                                            <Setter Property="CommandParameter" Value="{Binding}" />
+                                        </Style>
+                                    </MenuItem.ItemContainerStyle>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="Group settings…"
+                                          Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding Settings.Id}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                        <Button.ToolTip>
+                            <TextBlock Text="{Binding Settings.Name}" />
+                        </Button.ToolTip>
+                        <Image Source="{Binding CollapsedIcon}"
+                               Stretch="Uniform">
+                            <Image.Width>
+                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                </MultiBinding>
+                            </Image.Width>
+                            <Image.Height>
+                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                </MultiBinding>
+                            </Image.Height>
+                        </Image>
+                    </Button>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
     <Window.DataContext>
         <vm:TaskbarOverlayViewModel />
@@ -35,6 +317,19 @@
             CornerRadius="14"
             Padding="0">
         <DockPanel LastChildFill="True" VerticalAlignment="Stretch">
+            <Border DockPanel.Dock="Left"
+                    Width="12"
+                    Background="#15FFFFFF"
+                    Cursor="SizeAll"
+                    ToolTip="Drag window (standalone)">
+                <Rectangle Width="2"
+                           Height="18"
+                           Fill="#55FFFFFF"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           RadiusX="1"
+                           RadiusY="1" />
+            </Border>
             <StackPanel DockPanel.Dock="Right"
                         Orientation="Horizontal">
                 <Button Width="34"
@@ -61,63 +356,35 @@
                 </Button>
             </StackPanel>
 
-            <Grid>
+            <Grid local:WindowDragSuppressor.SuppressWindowDrag="True">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled">
                     <Border Padding="10,0,0,0">
-                        <ItemsControl ItemsSource="{Binding AppGroups}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button VerticalAlignment="Stretch"
-                                        Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
-                                        Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
-                                        Command="{Binding DataContext.OpenGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        >
-                                    <Button.CommandParameter>
-                                        <MultiBinding Converter="{StaticResource GroupClickContext}">
-                                            <Binding />
-                                            <Binding RelativeSource="{RelativeSource Self}" />
-                                        </MultiBinding>
-                                    </Button.CommandParameter>
-                                    <Button.ToolTip>
-                                        <StackPanel MaxWidth="420">
-                                            <TextBlock Text="{Binding TooltipHeader}"
-                                                       FontWeight="SemiBold"
-                                                       Margin="0,0,0,4" />
-                                            <TextBlock Text="{Binding TooltipBody}"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Button.ToolTip>
-                                    <Image Source="{Binding Icon}"
-                                           Stretch="Uniform">
-                                        <Image.RenderTransform>
-                                            <ScaleTransform ScaleX="1" ScaleY="1" />
-                                        </Image.RenderTransform>
-                                        <Image.RenderTransformOrigin>0.5,0.5</Image.RenderTransformOrigin>
-                                        <RenderOptions.BitmapScalingMode>HighQuality</RenderOptions.BitmapScalingMode>
-                                        <Image.Width>
-                                            <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                                <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
-                                            </MultiBinding>
-                                        </Image.Width>
-                                        <Image.Height>
-                                            <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                                <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
-                                            </MultiBinding>
-                                        </Image.Height>
-                                    </Image>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ItemsControl Grid.Column="0"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding LeftStripGroups}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <ItemsControl Grid.Column="2"
+                                          HorizontalAlignment="Right"
+                                          ItemsSource="{Binding RightStripGroups}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </Grid>
                     </Border>
                 </ScrollViewer>
 
@@ -154,12 +421,27 @@
                                     Value="{Binding IconSpacing, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,8,0,0"
+                                       Text="{Binding GroupSpacing, StringFormat=Group spacing: {0:0}}" />
+                            <Slider Minimum="0"
+                                    Maximum="48"
+                                    SmallChange="1"
+                                    LargeChange="2"
+                                    Value="{Binding GroupSpacing, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
                                        Text="{Binding RefreshIntervalMs, StringFormat=Refresh (ms): {0}}" />
                             <Slider Minimum="250"
                                     Maximum="5000"
                                     SmallChange="50"
                                     LargeChange="250"
                                     Value="{Binding RefreshIntervalMs, Mode=TwoWay}" />
+
+                            <Button Content="New strip group"
+                                    Margin="0,10,0,0"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding AddUserStripGroupCommand}"
+                                    ToolTip="Adds a new empty group (before Hidden). Drag apps into it." />
 
                             <TextBlock Margin="0,10,0,0"
                                        Text="Taskbar color (hex, e.g. #FF202020)" />
@@ -178,8 +460,67 @@
                         </StackPanel>
                     </Border>
                 </Popup>
+
+                <Popup x:Name="GroupSettingsPopup"
+                       IsOpen="{Binding IsGroupSettingsOpen, Mode=TwoWay}"
+                       StaysOpen="False"
+                       PlacementTarget="{Binding ElementName=RootWindow}"
+                       Placement="Center"
+                       Closed="GroupSettingsPopup_OnClosed">
+                    <Border Background="#FFF8F8F8"
+                            BorderBrush="#FFCCCCCC"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="14"
+                            MinWidth="320">
+                        <StackPanel TextElement.Foreground="#FF222222">
+                            <TextBlock Text="Group settings"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,10" />
+
+                            <TextBlock Text="Name" />
+                            <TextBox Text="{Binding EditingGroupDisplayName, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4,0,8"
+                                     Background="#FFFFFFFF"
+                                     Foreground="#FF222222"
+                                     BorderBrush="#FFAAAAAA" />
+
+                            <TextBlock Text="Background color (hex)" />
+                            <DockPanel Margin="0,4,0,8">
+                                <Button DockPanel.Dock="Right"
+                                        Content="Pick…"
+                                        Padding="10,4"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding PickEditingGroupColorCommand}" />
+                                <TextBox Text="{Binding EditingGroupColorText, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="#FFFFFFFF"
+                                         Foreground="#FF222222"
+                                         BorderBrush="#FFAAAAAA" />
+                            </DockPanel>
+                            <Border Height="28"
+                                    Margin="0,0,0,8"
+                                    CornerRadius="4"
+                                    BorderBrush="#FFAAAAAA"
+                                    BorderThickness="1"
+                                    Background="{Binding EditingGroupBrushPreview}" />
+
+                            <TextBlock Text="Display type" />
+                            <ComboBox Margin="0,4,0,0"
+                                      ItemsSource="{Binding AllGroupDisplayTypes}"
+                                      SelectedItem="{Binding EditingGroupDisplayType, Mode=TwoWay}"
+                                      Background="#FFFFFFFF"
+                                      Foreground="#FF222222" />
+
+                            <Button Content="Done"
+                                    Margin="0,14,0,0"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding CloseGroupSettingsCommand}" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
             </Grid>
         </DockPanel>
     </Border>
 </Window>
-
