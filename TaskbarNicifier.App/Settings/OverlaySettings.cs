@@ -20,6 +20,9 @@ public sealed class IntegratedOverlaySettings
 
 public sealed class LayoutSettings
 {
+    /// <summary>When true, the overlay cannot be resized (edge resize handles disabled).</summary>
+    public bool LockPosition { get; set; }
+
     public double IconPadding { get; set; } = 6;
     public double IconSpacing { get; set; } = 14;
     /// <summary>Horizontal gap after each strip group (px). Null in older settings files means default.</summary>

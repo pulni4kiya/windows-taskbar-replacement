@@ -365,7 +365,8 @@
                     Width="12"
                     Background="#15FFFFFF"
                     Cursor="SizeAll"
-                    ToolTip="Drag window (standalone)">
+                    Visibility="{Binding DragHandleVisibility}"
+                    ToolTip="Drag window (debug, standalone)">
                 <Rectangle Width="2"
                            Height="18"
                            Fill="#55FFFFFF"
@@ -449,6 +450,11 @@
                                        FontSize="14"
                                        FontWeight="SemiBold"
                                        Margin="0,0,0,10" />
+
+                            <CheckBox Content="Lock position"
+                                      Margin="0,0,0,8"
+                                      ToolTip="Prevent resizing the overlay window"
+                                      IsChecked="{Binding LockPosition, Mode=TwoWay}" />
 
                             <TextBlock Text="{Binding IconPadding, StringFormat=Icon padding: {0:0}}" />
                             <Slider Minimum="0"

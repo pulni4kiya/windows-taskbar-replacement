@@ -304,7 +304,9 @@ public partial class TaskbarOverlayWindow : Window
     {
         base.OnMouseLeftButtonDown(e);
 
-        if (DataContext is not TaskbarOverlayViewModel vm || vm.Mode != OverlayMode.Standalone)
+        if (DataContext is not TaskbarOverlayViewModel vm
+            || vm.Mode != OverlayMode.Standalone
+            || !vm.IsDebugMode)
             return;
 
         if (WindowDragSuppressor.IsDragSuppressed(e.OriginalSource as DependencyObject))
@@ -341,7 +343,7 @@ public partial class TaskbarOverlayWindow : Window
 
         if (msg == NativeMethods.WM_NCHITTEST)
         {
-            if (DataContext is TaskbarOverlayViewModel)
+            if (DataContext is TaskbarOverlayViewModel vm && !vm.LockPosition)
             {
                 var ht = HitTestResize(lParam);
                 if (ht != NativeMethods.HTCLIENT)

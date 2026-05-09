@@ -49,6 +49,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(ModeGlyph));
             OnPropertyChanged(nameof(ModeToolTip));
+            OnPropertyChanged(nameof(DragHandleVisibility));
         }
     }
 
@@ -60,6 +61,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public bool IsDebugMode => _settings.AppMode == AppMode.Debug;
     public Visibility ModeToggleVisibility => IsDebugMode ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Drag handle is only shown in debug mode while the overlay is standalone.</summary>
+    public Visibility DragHandleVisibility =>
+        IsDebugMode && Mode == OverlayMode.Standalone ? Visibility.Visible : Visibility.Collapsed;
 
     public RelayCommand ToggleModeCommand { get; }
     public RelayCommand OpenAppSlotMenuCommand { get; }
@@ -239,6 +244,18 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public IEnumerable<GroupDisplayType> AllGroupDisplayTypes { get; } =
         Enum.GetValues<GroupDisplayType>();
+
+    public bool LockPosition
+    {
+        get => _settings.Layout.LockPosition;
+        set
+        {
+            if (_settings.Layout.LockPosition == value) return;
+            _settings.Layout.LockPosition = value;
+            OnPropertyChanged();
+            PersistLayoutSettingsDebounced();
+        }
+    }
 
     public double IconPadding
     {
@@ -501,6 +518,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsDebugMode));
             OnPropertyChanged(nameof(ModeToggleVisibility));
+            OnPropertyChanged(nameof(DragHandleVisibility));
 
             ApplyAppModeToOverlayMode();
             ApplyModeWindowSettings();
