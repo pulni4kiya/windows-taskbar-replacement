@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using ImageSource = System.Windows.Media.ImageSource;
+using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 
 namespace TaskbarNicifier.App.ViewModels;
@@ -15,7 +16,11 @@ public sealed class AppSlotViewModel
         string parentGroupId,
         bool canMoveGroupLeft,
         bool canMoveGroupRight,
-        bool isFlashing)
+        bool isFlashing,
+        bool isPinned,
+        bool isRunning,
+        bool canPinOrUnpin,
+        PinnedAppSettings? pinnedSettings)
     {
         AppKey = appKey;
         DisplayName = displayName;
@@ -25,6 +30,10 @@ public sealed class AppSlotViewModel
         CanMoveGroupLeft = canMoveGroupLeft;
         CanMoveGroupRight = canMoveGroupRight;
         IsFlashing = isFlashing;
+        IsPinned = isPinned;
+        IsRunning = isRunning;
+        CanPinOrUnpin = canPinOrUnpin;
+        PinnedSettings = pinnedSettings;
     }
 
     public string AppKey { get; }
@@ -35,7 +44,28 @@ public sealed class AppSlotViewModel
     public bool CanMoveGroupLeft { get; }
     public bool CanMoveGroupRight { get; }
     public bool IsFlashing { get; }
+    public bool IsPinned { get; }
+    public bool IsRunning { get; }
+    public bool CanPinOrUnpin { get; }
+    public PinnedAppSettings? PinnedSettings { get; }
 
-    public string TooltipHeader => $"{DisplayName} ({Windows.Count})";
-    public string TooltipBody => string.Join("\n", Windows.Select(w => w.Title));
+    public string TooltipHeader
+    {
+        get
+        {
+            if (!IsRunning && IsPinned)
+                return $"{DisplayName} (pinned)";
+            return $"{DisplayName} ({Windows.Count})";
+        }
+    }
+
+    public string TooltipBody
+    {
+        get
+        {
+            if (!IsRunning && IsPinned)
+                return "Not running — click to launch.";
+            return string.Join("\n", Windows.Select(w => w.Title));
+        }
+    }
 }

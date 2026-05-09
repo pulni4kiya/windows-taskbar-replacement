@@ -2,6 +2,18 @@ using System.Collections.Generic;
 
 namespace TaskbarNicifier.App.Settings;
 
+/// <summary>Persisted metadata for a pinned app (no HWND). Used for icon lookup and launch when not running.</summary>
+public sealed class PinnedAppSettings
+{
+    public string AppKey { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string? AppUserModelId { get; set; }
+    public string? IdentityProcessPath { get; set; }
+    public string? ProcessPath { get; set; }
+    public string? IdentityProcessName { get; set; }
+    public string? ProcessName { get; set; }
+}
+
 public enum GroupDisplayType
 {
     Expanded = 0,
@@ -39,4 +51,7 @@ public sealed class GroupingSettings
 
     /// <summary>App key -> last group id the app was in before Hide (excluding Hidden).</summary>
     public Dictionary<string, string> LastNonHiddenGroupByAppKey { get; set; } = new();
+
+    /// <summary>App key -> pin metadata. Keys should match <c>AppIdentity.GetAppKey</c>.</summary>
+    public Dictionary<string, PinnedAppSettings> PinnedAppsByKey { get; set; } = new();
 }

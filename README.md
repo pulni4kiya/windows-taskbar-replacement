@@ -11,9 +11,9 @@ It allows you to organize the applications into groups for easier navigation. Yo
 ## Supported classic features
 - Middle click to open new instance or close one when you have several opened
 - Open apps while dragging something and hovering over them
+- Pin apps so that they show even when not running for quick access
 
 ## Missing but (almost) planned features
-- Pin apps so that they show even when not running for quick access
 - Show taskbar on each monitor
     - There's currently only one taskbar on the main monitor
 - Configuration for how to interrach with monitors and windows virtual desktops

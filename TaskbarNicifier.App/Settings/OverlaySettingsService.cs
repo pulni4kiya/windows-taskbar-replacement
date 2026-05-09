@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -51,7 +52,28 @@ public sealed class OverlaySettingsService
         GroupingSettingsBootstrap.EnsureGroupingContainer(s);
         GroupingSettingsBootstrap.EnsureDefaultGroups(s.Grouping);
         GroupingSettingsBootstrap.NormalizeGroupAlignments(s.Grouping);
-        s.Grouping.LastNonHiddenGroupByAppKey ??= new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        s.Grouping.LastNonHiddenGroupByAppKey ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        NormalizePinnedAppsDictionary(s.Grouping);
+    }
+
+    private static void NormalizePinnedAppsDictionary(GroupingSettings g)
+    {
+        if (g.PinnedAppsByKey is null || g.PinnedAppsByKey.Count == 0)
+        {
+            g.PinnedAppsByKey = new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        var merged = new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in g.PinnedAppsByKey)
+        {
+            if (string.IsNullOrWhiteSpace(kv.Key) || kv.Value is null)
+                continue;
+            kv.Value.AppKey = kv.Value.AppKey.Length > 0 ? kv.Value.AppKey : kv.Key;
+            merged[kv.Key] = kv.Value;
+        }
+
+        g.PinnedAppsByKey = merged;
     }
 
     public void Save(OverlaySettings settings)

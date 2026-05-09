@@ -137,6 +137,43 @@
                                                 <MenuItem Header="Hide"
                                                           Command="{Binding DataContext.HideAppCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding}" />
+                                                <MenuItem Header="Pin to taskbar"
+                                                          Command="{Binding DataContext.PinAppCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding CanPinOrUnpin}" Value="True" />
+                                                                        <Condition Binding="{Binding IsRunning}" Value="True" />
+                                                                        <Condition Binding="{Binding IsPinned}" Value="False" />
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </MultiDataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <MenuItem Header="Unpin from taskbar"
+                                                          Command="{Binding DataContext.UnpinAppCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding CanPinOrUnpin}" Value="True" />
+                                                                        <Condition Binding="{Binding IsPinned}" Value="True" />
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </MultiDataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
                                                 <Separator />
                                                 <MenuItem Header="Move group left"
                                                           Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
@@ -196,6 +233,17 @@
                                             <Border Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}">
                                                 <Image Source="{Binding Icon}"
                                                        Stretch="Uniform">
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Setter Property="Opacity" Value="1" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="False">
+                                                                    <Setter Property="Opacity"
+                                                                            Value="{Binding DataContext.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
                                                     <Image.Width>
                                                         <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                                             <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
@@ -335,6 +383,17 @@
                         </Button.ToolTip>
                         <Image Source="{Binding CollapsedIcon}"
                                Stretch="Uniform">
+                            <Image.Style>
+                                <Style TargetType="Image">
+                                    <Setter Property="Opacity" Value="1" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CollapsedIconUsePinnedOpacity}" Value="True">
+                                            <Setter Property="Opacity"
+                                                    Value="{Binding DataContext.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
                             <Image.Width>
                                 <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                     <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
@@ -505,6 +564,14 @@
                                     SmallChange="0.05"
                                     LargeChange="0.1"
                                     Value="{Binding DragHoverDelaySeconds, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="{Binding PinnedAppOpacity, StringFormat=Pinned app opacity: {0:0.00}}" />
+                            <Slider Minimum="0.15"
+                                    Maximum="1.0"
+                                    SmallChange="0.05"
+                                    LargeChange="0.1"
+                                    Value="{Binding PinnedAppOpacity, Mode=TwoWay}" />
 
                             <Button Content="New strip group"
                                     Margin="0,10,0,0"

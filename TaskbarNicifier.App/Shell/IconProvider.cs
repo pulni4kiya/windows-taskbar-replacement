@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using TaskbarNicifier.App.Interop;
+using TaskbarNicifier.App.Settings;
 
 namespace TaskbarNicifier.App.Shell;
 
@@ -53,6 +54,71 @@ public sealed class IconProvider
         }
 
         return null;
+    }
+
+    /// <summary>Icon for a pinned app with no open windows. Never returns null.</summary>
+    public ImageSource TryGetIconForPinnedApp(PinnedAppSettings pin)
+    {
+        if (!string.IsNullOrWhiteSpace(pin.AppUserModelId))
+        {
+            var src = TryGetIconFromAumid(pin.AppUserModelId.Trim());
+            if (src is not null)
+                return src;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pin.IdentityProcessPath))
+        {
+            var idp = pin.IdentityProcessPath.Trim();
+            var src = TryGetIconFromPackageAssets(idp);
+            if (src is not null)
+                return src;
+            if (File.Exists(idp))
+            {
+                src = TryGetIconFromFile(idp);
+                if (src is not null)
+                    return src;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(pin.ProcessPath))
+        {
+            var pp = pin.ProcessPath.Trim();
+            var src = TryGetIconFromPackageAssets(pp);
+            if (src is not null)
+                return src;
+
+            if (File.Exists(pp))
+            {
+                src = TryGetIconFromFile(pp);
+                if (src is not null)
+                    return src;
+            }
+        }
+
+        return CreateGenericPinnedAppIcon();
+    }
+
+    private static ImageSource CreateGenericPinnedAppIcon()
+    {
+        var stroke = new SolidColorBrush(Color.FromArgb(200, 220, 220, 220));
+        var fill = new SolidColorBrush(Color.FromArgb(90, 180, 180, 180));
+        stroke.Freeze();
+        fill.Freeze();
+
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(
+            fill,
+            new Pen(stroke, 1.2),
+            new RectangleGeometry(new System.Windows.Rect(4, 4, 24, 24), 4, 4)));
+        group.Children.Add(new GeometryDrawing(
+            stroke,
+            new Pen(stroke, 1.5),
+            new EllipseGeometry(new System.Windows.Point(20, 12), 3.5, 3.5)));
+        group.Freeze();
+
+        var image = new DrawingImage(group);
+        image.Freeze();
+        return image;
     }
 
     private static ImageSource? TryGetIconFromPackageAssets(string processPath)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -9,6 +10,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using System.Xml.Linq;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
 using TaskbarNicifier.App.Interop;
@@ -80,6 +82,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand AddUserStripGroupCommand { get; }
     public RelayCommand MoveGroupLeftCommand { get; }
     public RelayCommand MoveGroupRightCommand { get; }
+    public RelayCommand PinAppCommand { get; }
+    public RelayCommand UnpinAppCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -115,6 +119,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         AddUserStripGroupCommand = new RelayCommand(_ => AddUserStripGroup());
         MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
+        PinAppCommand = new RelayCommand(p => PinApp(p));
+        UnpinAppCommand = new RelayCommand(p => UnpinApp(p));
 
         _settings = _settingsService.Load();
         ApplyAppModeToOverlayMode();
@@ -327,6 +333,30 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     }
 
     public TimeSpan DragHoverDelay => TimeSpan.FromSeconds(DragHoverDelaySeconds);
+
+    public double PinnedAppOpacity
+    {
+        get => GetClampedPinnedAppOpacity(_settings.Layout.PinnedAppOpacity);
+        set
+        {
+            var v = GetClampedPinnedAppOpacity(value);
+            if (Math.Abs(_settings.Layout.PinnedAppOpacity - v) < 0.0001) return;
+            _settings.Layout.PinnedAppOpacity = v;
+            OnPropertyChanged();
+            _groupingVersion++;
+            Refresh();
+            PersistLayoutSettingsDebounced();
+        }
+    }
+
+    private static double GetClampedPinnedAppOpacity(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return 0.70;
+        if (value < 0.15) return 0.15;
+        if (value > 1.0) return 1.0;
+        return value;
+    }
 
     private static double GetClampedDragHoverDelaySeconds(double value)
     {
@@ -603,6 +633,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         GroupingSettingsBootstrap.EnsureDefaultGroups(_settings.Grouping);
         var gs = _settings.Grouping;
         gs.LastNonHiddenGroupByAppKey ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        gs.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
 
         GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
 
@@ -651,11 +682,24 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                 var slots = new ObservableCollection<AppSlotViewModel>();
                 foreach (var key in ug.OrderedAppKeys)
                 {
-                    if (!liveByKey.TryGetValue(key, out var wins) || wins.Count == 0)
+                    if (!liveByKey.TryGetValue(key, out var wins))
+                        wins = new List<AppWindowItem>();
+
+                    var isPinned = gs.PinnedAppsByKey.TryGetValue(key, out var pin);
+                    if (wins.Count == 0 && !isPinned)
                         continue;
 
-                    var icon = _iconProvider.TryGetIconForWindows(wins);
-                    var isFlashing = _attentionHwnds.Count > 0 && wins.Any(w => _attentionHwnds.Contains(w.Hwnd));
+                    if (isPinned && pin is not null && wins.Count > 0)
+                        UpdatePinnedMetadataFromWindow(pin, PickRepresentativeWindow(wins));
+
+                    ImageSource? icon;
+                    if (wins.Count > 0)
+                        icon = _iconProvider.TryGetIconForWindows(wins);
+                    else
+                        icon = _iconProvider.TryGetIconForPinnedApp(pin!);
+
+                    var isFlashing = wins.Count > 0 && _attentionHwnds.Count > 0 &&
+                                     wins.Any(w => _attentionHwnds.Contains(w.Hwnd));
                     var canMoveGroupLeft = isLeftSide
                         ? i > 0
                         : i > 0 || leftSettings.Count > 0;
@@ -665,15 +709,25 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                           !(i + 1 < sideList.Count &&
                             string.Equals(sideList[i + 1].Id, gs.HiddenGroupId, StringComparison.Ordinal));
 
+                    var displayName = wins.Count > 0
+                        ? AppIdentity.GetDisplayName(PickRepresentativeWindow(wins))
+                        : pin?.DisplayName ?? key;
+
+                    var canPinOrUnpin = !string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
+
                     slots.Add(new AppSlotViewModel(
                         appKey: key,
-                        displayName: AppIdentity.GetDisplayName(wins[0]),
+                        displayName: displayName,
                         windows: wins,
                         icon: icon,
                         parentGroupId: ug.Id,
                         canMoveGroupLeft: canMoveGroupLeft,
                         canMoveGroupRight: canMoveGroupRight,
-                        isFlashing: isFlashing));
+                        isFlashing: isFlashing,
+                        isPinned: isPinned,
+                        isRunning: wins.Count > 0,
+                        canPinOrUnpin: canPinOrUnpin,
+                        pinnedSettings: pin));
                 }
 
                 var isHiddenGroup = string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
@@ -921,7 +975,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return;
         }
 
-        ShowWindowPickerPopup(slot.Windows, placementTarget ?? _window);
+        if (slot.Windows.Count > 1)
+        {
+            ShowWindowPickerPopup(slot.Windows, placementTarget ?? _window);
+            return;
+        }
+
+        if (slot.PinnedSettings is not null)
+            _ = TryLaunchPinnedApp(slot.PinnedSettings);
     }
 
     public void DragHoverOpenSlot(AppSlotViewModel slot, FrameworkElement placementTarget)
@@ -930,7 +991,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return;
 
         if (slot.Windows.Count == 0)
+        {
+            if (slot.PinnedSettings is not null)
+                _ = TryLaunchPinnedApp(slot.PinnedSettings);
             return;
+        }
 
         if (slot.Windows.Count == 1)
         {
@@ -945,30 +1010,45 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public void LaunchNewInstance(AppSlotViewModel slot)
     {
         var item = slot.Windows.FirstOrDefault();
-        if (item is null)
+        if (item is not null)
+        {
+            _ = TryLaunchNewInstance(item);
             return;
+        }
 
-        _ = TryLaunchNewInstance(item);
+        if (slot.PinnedSettings is not null)
+            _ = TryLaunchPinnedApp(slot.PinnedSettings);
     }
 
     private static bool TryLaunchNewInstance(AppWindowItem item)
+        => TryLaunchFromAumidOrExe(item.AppUserModelId, item.IdentityProcessPath, item.ProcessPath);
+
+    private static bool TryLaunchPinnedApp(PinnedAppSettings pin)
+    {
+        var aumid = !string.IsNullOrWhiteSpace(pin.AppUserModelId)
+            ? pin.AppUserModelId
+            : TryDerivePackagedAppUserModelId(pin.IdentityProcessPath ?? pin.ProcessPath);
+        return TryLaunchFromAumidOrExe(aumid, pin.IdentityProcessPath, pin.ProcessPath);
+    }
+
+    private static bool TryLaunchFromAumidOrExe(string? appUserModelId, string? identityProcessPath, string? processPath)
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(item.AppUserModelId))
+            if (!string.IsNullOrWhiteSpace(appUserModelId))
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                     "explorer.exe",
-                    $"shell:AppsFolder\\{item.AppUserModelId!.Trim()}")
+                    $"shell:AppsFolder\\{appUserModelId.Trim()}")
                 {
                     UseShellExecute = true,
                 });
                 return true;
             }
 
-            var path = !string.IsNullOrWhiteSpace(item.IdentityProcessPath)
-                ? item.IdentityProcessPath
-                : item.ProcessPath;
+            var path = !string.IsNullOrWhiteSpace(identityProcessPath)
+                ? identityProcessPath
+                : processPath;
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                 return false;
 
@@ -1015,7 +1095,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
 
         if (orderedWindows.Count == 0)
+        {
+            var pinSlot = groupVm.Slots.FirstOrDefault(s =>
+                s.PinnedSettings is not null && s.Windows.Count == 0);
+            if (pinSlot?.PinnedSettings is not null)
+                _ = TryLaunchPinnedApp(pinSlot.PinnedSettings);
             return;
+        }
 
         if (orderedWindows.Count == 1)
         {
@@ -1249,6 +1335,121 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         BumpGroupingAndRebuild();
     }
 
+    private void PinApp(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot || !slot.CanPinOrUnpin)
+            return;
+        if (slot.Windows.Count == 0)
+            return;
+
+        var gs = _settings.Grouping;
+        gs.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+        var pin = new PinnedAppSettings();
+        UpdatePinnedMetadataFromWindow(pin, PickRepresentativeWindow(slot.Windows));
+        gs.PinnedAppsByKey[slot.AppKey] = pin;
+        BumpGroupingAndRebuild();
+    }
+
+    private void UnpinApp(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot || !slot.CanPinOrUnpin)
+            return;
+
+        var gs = _settings.Grouping;
+        gs.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+
+        var toRemove = gs.PinnedAppsByKey.Keys.FirstOrDefault(k =>
+            string.Equals(k, slot.AppKey, StringComparison.OrdinalIgnoreCase));
+        if (toRemove is not null)
+            gs.PinnedAppsByKey.Remove(toRemove);
+
+        if (slot.Windows.Count == 0)
+            GroupingOrderOperations.RemoveAppKeyFromAllGroups(gs, slot.AppKey);
+
+        BumpGroupingAndRebuild();
+    }
+
+    private static AppWindowItem PickRepresentativeWindow(IReadOnlyList<AppWindowItem> windows)
+    {
+        if (windows.Count == 0)
+            throw new ArgumentException("At least one window is required.", nameof(windows));
+
+        var withAumid = windows.FirstOrDefault(w => !string.IsNullOrWhiteSpace(w.AppUserModelId));
+        return withAumid ?? windows[0];
+    }
+
+    private static void UpdatePinnedMetadataFromWindow(PinnedAppSettings pin, AppWindowItem w)
+    {
+        pin.AppKey = AppIdentity.GetAppKey(w);
+        pin.DisplayName = AppIdentity.GetDisplayName(w);
+        pin.AppUserModelId = !string.IsNullOrWhiteSpace(w.AppUserModelId)
+            ? w.AppUserModelId
+            : TryDerivePackagedAppUserModelId(w.IdentityProcessPath ?? w.ProcessPath);
+        pin.IdentityProcessPath = w.IdentityProcessPath;
+        pin.ProcessPath = w.ProcessPath;
+        pin.IdentityProcessName = w.IdentityProcessName;
+        pin.ProcessName = w.ProcessName;
+    }
+
+    private static string? TryDerivePackagedAppUserModelId(string? processPath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(processPath))
+                return null;
+
+            var exePath = processPath.Trim();
+            var packageDir = Path.GetDirectoryName(exePath);
+            if (string.IsNullOrWhiteSpace(packageDir))
+                return null;
+
+            var manifestPath = Path.Combine(packageDir, "AppxManifest.xml");
+            if (!File.Exists(manifestPath))
+                manifestPath = Path.Combine(packageDir, "Package.appxmanifest");
+            if (!File.Exists(manifestPath))
+                return null;
+
+            var doc = XDocument.Load(manifestPath);
+            var identity = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Identity");
+            var packageName = identity?.Attribute("Name")?.Value;
+            if (string.IsNullOrWhiteSpace(packageName))
+                return null;
+
+            var publisherId = TryGetPackagePublisherIdFromDirectory(packageDir);
+            if (string.IsNullOrWhiteSpace(publisherId))
+                return null;
+
+            var exeName = Path.GetFileName(exePath);
+            var application = doc
+                .Descendants()
+                .Where(e => e.Name.LocalName == "Application")
+                .FirstOrDefault(e => string.Equals(
+                    Path.GetFileName(e.Attribute("Executable")?.Value ?? ""),
+                    exeName,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Application");
+            var appId = application?.Attribute("Id")?.Value;
+            if (string.IsNullOrWhiteSpace(appId))
+                return null;
+
+            var aumid = $"{packageName}_{publisherId}!{appId}";
+            return aumid;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetPackagePublisherIdFromDirectory(string packageDir)
+    {
+        var name = new DirectoryInfo(packageDir).Name;
+        var sep = name.LastIndexOf("__", StringComparison.Ordinal);
+        if (sep < 0 || sep + 2 >= name.Length)
+            return null;
+        return name[(sep + 2)..];
+    }
+
     private void UnhideApp(object? parameter)
     {
         if (parameter is not AppSlotViewModel slot)
@@ -1412,11 +1613,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         var windows = ApplyContextFilters(_windowEnumerator.GetOpenAppWindows());
         var liveKeys = windows.Select(AppIdentity.GetAppKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var liveInGroup = new HashSet<string>(
-            g.OrderedAppKeys.Where(k => liveKeys.Contains(k)),
+        gs.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+        var visibleInGroup = new HashSet<string>(
+            g.OrderedAppKeys.Where(k => liveKeys.Contains(k) || gs.PinnedAppsByKey.ContainsKey(k)),
             StringComparer.OrdinalIgnoreCase);
 
-        GroupingOrderOperations.ReorderVisibleKeysInPlace(g.OrderedAppKeys, liveInGroup, visibleKeysNewOrder);
+        GroupingOrderOperations.ReorderVisibleKeysInPlace(g.OrderedAppKeys, visibleInGroup, visibleKeysNewOrder);
         BumpGroupingAndRebuild();
     }
 
@@ -1507,9 +1709,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         var windows = ApplyContextFilters(_windowEnumerator.GetOpenAppWindows());
         var liveKeys = windows.Select(AppIdentity.GetAppKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _settings.Grouping.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
+        var pinned = _settings.Grouping.PinnedAppsByKey;
 
-        var liveInGroupOrdered = g.OrderedAppKeys.Where(k => liveKeys.Contains(k)).ToList();
-        var work = liveInGroupOrdered
+        var visibleInGroupOrdered = g.OrderedAppKeys
+            .Where(k => liveKeys.Contains(k) || pinned.ContainsKey(k))
+            .ToList();
+        var work = visibleInGroupOrdered
             .Where(k => !string.Equals(k, appKey, StringComparison.OrdinalIgnoreCase))
             .ToList();
 

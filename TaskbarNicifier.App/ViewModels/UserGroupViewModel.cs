@@ -42,6 +42,11 @@ public sealed class UserGroupViewModel
     public bool IsSingleItemDisplay => IsHiddenGroup || Settings.DisplayType == GroupDisplayType.SingleItem;
     public ImageSource? CollapsedIcon => IsHiddenGroup ? HiddenGroupIcon : Slots.FirstOrDefault()?.Icon;
 
+    /// <summary>True when the collapsed chip should use the user-configured pinned-app icon opacity.</summary>
+    public bool CollapsedIconUsePinnedOpacity =>
+        !IsHiddenGroup &&
+        Slots.FirstOrDefault() is { IsRunning: false, IsPinned: true };
+
     private static ImageSource CreateHiddenGroupIcon()
     {
         var white = new SolidColorBrush(System.Windows.Media.Color.FromArgb(220, 255, 255, 255));
