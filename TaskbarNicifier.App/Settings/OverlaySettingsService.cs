@@ -65,6 +65,9 @@ public sealed class OverlaySettingsService
         GroupingSettingsBootstrap.NormalizeGroupAlignments(s.Grouping);
         s.Grouping.LastNonHiddenGroupByAppKey ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         NormalizePinnedAppsDictionary(s.Grouping);
+
+        if (string.IsNullOrWhiteSpace(s.Layout.StripAccentColor))
+            s.Layout.StripAccentColor = "#FF000000";
     }
 
     private static bool HasAnyIntegratedBounds(IntegratedOverlaySettings s)

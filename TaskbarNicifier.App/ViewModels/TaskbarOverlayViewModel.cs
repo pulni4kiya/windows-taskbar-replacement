@@ -112,6 +112,76 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public bool IsExternalDragActive
         => DateTime.UtcNow - _externalDragLastSeenUtc < TimeSpan.FromMilliseconds(250);
 
+    private bool _isStripDragActive;
+    /// <summary>True while an in-strip app icon reorder drag (<see cref="StripDragPayload"/>) is in progress.</summary>
+    public bool IsStripDragActive
+    {
+        get => _isStripDragActive;
+        private set
+        {
+            if (_isStripDragActive == value) return;
+            _isStripDragActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string? _stripDragTargetGroupId;
+    /// <summary>Group currently hovered during strip drag; null when no insertion preview.</summary>
+    public string? StripDragTargetGroupId
+    {
+        get => _stripDragTargetGroupId;
+        private set
+        {
+            if (ReferenceEquals(_stripDragTargetGroupId, value)
+                || (_stripDragTargetGroupId is not null && value is not null
+                    && string.Equals(_stripDragTargetGroupId, value, StringComparison.OrdinalIgnoreCase)))
+                return;
+            _stripDragTargetGroupId = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private int _stripDragVisualInsertIndex;
+    /// <summary>Visual insertion index (0..slot count) within <see cref="StripDragTargetGroupId"/>.</summary>
+    public int StripDragVisualInsertIndex
+    {
+        get => _stripDragVisualInsertIndex;
+        private set
+        {
+            if (_stripDragVisualInsertIndex == value) return;
+            _stripDragVisualInsertIndex = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void BeginStripReorderDrag()
+    {
+        IsStripDragActive = true;
+        StripDragTargetGroupId = null;
+        StripDragVisualInsertIndex = 0;
+    }
+
+    public void EndStripReorderDrag()
+    {
+        IsStripDragActive = false;
+        StripDragTargetGroupId = null;
+        StripDragVisualInsertIndex = 0;
+    }
+
+    public void UpdateStripInsertPreview(string targetGroupId, int visualInsertIndex)
+    {
+        if (!IsStripDragActive) return;
+
+        if (!string.Equals(_stripDragTargetGroupId, targetGroupId, StringComparison.OrdinalIgnoreCase) ||
+            _stripDragVisualInsertIndex != visualInsertIndex)
+        {
+            _stripDragTargetGroupId = targetGroupId;
+            _stripDragVisualInsertIndex = visualInsertIndex;
+            OnPropertyChanged(nameof(StripDragTargetGroupId));
+            OnPropertyChanged(nameof(StripDragVisualInsertIndex));
+        }
+    }
+
     internal TaskbarOverlayViewModel(
         TaskbarTarget target,
         OverlaySharedSettingsViewModel shared,

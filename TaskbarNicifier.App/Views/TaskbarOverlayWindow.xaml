@@ -24,6 +24,11 @@
     <Window.Resources>
         <conv:DoubleToUniformThicknessConverter x:Key="DoubleToUniformThickness" />
         <conv:DoubleToRightMarginConverter x:Key="DoubleToRightMargin" />
+        <conv:StripItemTrailingMarginConverter x:Key="StripItemTrailingMargin" />
+        <conv:StripGroupTrailingMarginConverter x:Key="StripGroupTrailingMargin" />
+        <conv:StripInsertLineBeforeSlotConverter x:Key="StripInsertLineBeforeSlot" />
+        <conv:StripInsertLineTailExpandedConverter x:Key="StripInsertLineTailExpanded" />
+        <conv:StripInsertLineTailCollapsedConverter x:Key="StripInsertLineTailCollapsed" />
         <conv:ButtonIconSizeConverter x:Key="ButtonIconSize" />
         <conv:AppSlotClickContextConverter x:Key="AppSlotClickContext" />
         <conv:CollapsedGroupClickContextConverter x:Key="CollapsedGroupClickContext" />
@@ -50,13 +55,52 @@
         </Style>
         <DataTemplate DataType="{x:Type vm:UserGroupViewModel}">
             <Border x:Name="GroupBorder"
-                    Margin="{Binding DataContext.Shared.GroupSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                     Padding="2"
                     CornerRadius="10"
                     Background="{Binding GroupBackground}"
                     AllowDrop="True"
                     PreviewDragOver="StripGroup_PreviewDragOver"
                     Drop="StripGroup_Drop">
+                <Border.Margin>
+                    <MultiBinding Converter="{StaticResource StripGroupTrailingMargin}">
+                        <Binding />
+                        <Binding RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                        <Binding ElementName="RootWindow"
+                                 Path="DataContext.Shared.GroupSpacing" />
+                        <Binding ElementName="RootWindow"
+                                 Path="DataContext.IsStripDragActive" />
+                    </MultiBinding>
+                </Border.Margin>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility"
+                                Value="Visible" />
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsHiddenGroup}"
+                                               Value="True" />
+                                    <Condition Binding="{Binding Slots.Count}"
+                                               Value="0" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility"
+                                        Value="Collapsed" />
+                            </MultiDataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsHiddenGroup}"
+                                               Value="False" />
+                                    <Condition Binding="{Binding Slots.Count}"
+                                               Value="0" />
+                                    <Condition Binding="{Binding DataContext.IsStripDragActive, ElementName=RootWindow}"
+                                               Value="False" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility"
+                                        Value="Collapsed" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Border.ContextMenu>
                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                         <MenuItem Header="Move group left"
@@ -115,17 +159,51 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:AppSlotViewModel}">
-                                    <Button VerticalAlignment="Stretch"
-                                            x:Name="AppSlotButton"
-                                            Style="{StaticResource IconButtonStyle}"
-                                            Margin="{Binding DataContext.Shared.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
-                                            Padding="0"
-                                            PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
-                                            PreviewMouseUp="AppSlot_PreviewMouseUp"
-                                            PreviewDragEnter="AppSlot_PreviewDragEnter"
-                                            PreviewDragOver="AppSlot_PreviewDragOver"
-                                            PreviewDragLeave="AppSlot_PreviewDragLeave"
-                                            Command="{Binding DataContext.OpenAppSlotMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <Grid VerticalAlignment="Stretch">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Rectangle Grid.Column="0"
+                                                   Width="2"
+                                                   Margin="0,4,2,4"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Stretch"
+                                                   Fill="{Binding DataContext.Shared.StripAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                   RadiusX="1"
+                                                   RadiusY="1">
+                                            <Rectangle.Visibility>
+                                                <MultiBinding Converter="{StaticResource StripInsertLineBeforeSlot}">
+                                                    <Binding />
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    <Binding ElementName="RootWindow"
+                                                             Path="DataContext.StripDragTargetGroupId" />
+                                                    <Binding ElementName="RootWindow"
+                                                             Path="DataContext.StripDragVisualInsertIndex" />
+                                                    <Binding ElementName="RootWindow"
+                                                             Path="DataContext.IsStripDragActive" />
+                                                </MultiBinding>
+                                            </Rectangle.Visibility>
+                                        </Rectangle>
+                                        <Button Grid.Column="1"
+                                                VerticalAlignment="Stretch"
+                                                x:Name="AppSlotButton"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Padding="0"
+                                                PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
+                                                PreviewMouseUp="AppSlot_PreviewMouseUp"
+                                                PreviewDragEnter="AppSlot_PreviewDragEnter"
+                                                PreviewDragOver="AppSlot_PreviewDragOver"
+                                                PreviewDragLeave="AppSlot_PreviewDragLeave"
+                                                Command="{Binding DataContext.OpenAppSlotMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                            <Button.Margin>
+                                                <MultiBinding Converter="{StaticResource StripItemTrailingMargin}">
+                                                    <Binding />
+                                                    <Binding RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    <Binding ElementName="RootWindow"
+                                                             Path="DataContext.Shared.IconSpacing" />
+                                                </MultiBinding>
+                                            </Button.Margin>
                                         <Button.CommandParameter>
                                             <MultiBinding Converter="{StaticResource AppSlotClickContext}">
                                                 <Binding />
@@ -260,6 +338,7 @@
                                             </Border>
                                         </Grid>
                                     </Button>
+                                    </Grid>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding ElementName=AppSlotButton, Path=IsMouseOver}" Value="True">
                                             <Setter TargetName="HoverOverlay" Property="Opacity" Value="1" />
@@ -285,10 +364,54 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <Rectangle Width="2"
+                                   Margin="0,4,0,4"
+                                   VerticalAlignment="Stretch"
+                                   Fill="{Binding DataContext.Shared.StripAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   RadiusX="1"
+                                   RadiusY="1">
+                            <Rectangle.Visibility>
+                                <MultiBinding Converter="{StaticResource StripInsertLineTailExpanded}">
+                                    <Binding />
+                                    <Binding ElementName="RootWindow"
+                                             Path="DataContext.StripDragTargetGroupId" />
+                                    <Binding ElementName="RootWindow"
+                                             Path="DataContext.StripDragVisualInsertIndex" />
+                                    <Binding ElementName="RootWindow"
+                                             Path="DataContext.IsStripDragActive" />
+                                </MultiBinding>
+                            </Rectangle.Visibility>
+                        </Rectangle>
+                        <TextBlock VerticalAlignment="Center"
+                                   Margin="8,0,10,0"
+                                   Foreground="{Binding DataContext.Shared.StripAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                   FontSize="12"
+                                   Text="{Binding Settings.Name}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility"
+                                            Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsHiddenGroup}"
+                                                           Value="False" />
+                                                <Condition Binding="{Binding Slots.Count}"
+                                                           Value="0" />
+                                                <Condition Binding="{Binding DataContext.IsStripDragActive, ElementName=RootWindow}"
+                                                           Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility"
+                                                    Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                     <Button x:Name="CollapsedGroupButton"
                             VerticalAlignment="Stretch"
-                            Margin="{Binding DataContext.Shared.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                            Margin="0"
                             Padding="{Binding DataContext.Shared.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
                             PreviewMouseUp="CollapsedGroup_PreviewMouseUp"
                             Command="{Binding DataContext.OpenCollapsedGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
@@ -381,32 +504,99 @@
                         <Button.ToolTip>
                             <TextBlock Text="{Binding Settings.Name}" />
                         </Button.ToolTip>
-                        <Image Source="{Binding CollapsedIcon}"
-                               Stretch="Uniform">
-                            <Image.Style>
-                                <Style TargetType="Image">
-                                    <Setter Property="Opacity" Value="1" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CollapsedIconUsePinnedOpacity}" Value="True">
+                        <Grid>
+                            <Rectangle Width="2"
+                                       Margin="0,4,-2,4"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Stretch"
+                                       Fill="{Binding DataContext.Shared.StripAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       RadiusX="1"
+                                       RadiusY="1">
+                                <Rectangle.Visibility>
+                                    <MultiBinding Converter="{StaticResource StripInsertLineTailCollapsed}">
+                                        <Binding />
+                                        <Binding ElementName="RootWindow"
+                                                 Path="DataContext.StripDragTargetGroupId" />
+                                        <Binding ElementName="RootWindow"
+                                                 Path="DataContext.StripDragVisualInsertIndex" />
+                                        <Binding ElementName="RootWindow"
+                                                 Path="DataContext.IsStripDragActive" />
+                                    </MultiBinding>
+                                </Rectangle.Visibility>
+                            </Rectangle>
+                            <Grid>
+                                <Image Source="{Binding CollapsedIcon}"
+                                       Stretch="Uniform">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
                                             <Setter Property="Opacity"
-                                                    Value="{Binding DataContext.Shared.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Image.Style>
-                            <Image.Width>
-                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
-                                </MultiBinding>
-                            </Image.Width>
-                            <Image.Height>
-                                <MultiBinding Converter="{StaticResource ButtonIconSize}">
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
-                                </MultiBinding>
-                            </Image.Height>
-                        </Image>
+                                                    Value="1" />
+                                            <Setter Property="Visibility"
+                                                    Value="Visible" />
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding Slots.Count}"
+                                                                   Value="0" />
+                                                        <Condition Binding="{Binding DataContext.IsStripDragActive, ElementName=RootWindow}"
+                                                                   Value="True" />
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility"
+                                                            Value="Collapsed" />
+                                                </MultiDataTrigger>
+                                                <DataTrigger Binding="{Binding CollapsedIconUsePinnedOpacity}"
+                                                             Value="True">
+                                                    <Setter Property="Opacity"
+                                                            Value="{Binding DataContext.Shared.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                    <Image.Width>
+                                        <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                            <Binding RelativeSource="{RelativeSource AncestorType=Button}"
+                                                     Path="ActualHeight" />
+                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}"
+                                                     Path="DataContext.Shared.IconPadding" />
+                                        </MultiBinding>
+                                    </Image.Width>
+                                    <Image.Height>
+                                        <MultiBinding Converter="{StaticResource ButtonIconSize}">
+                                            <Binding RelativeSource="{RelativeSource AncestorType=Button}"
+                                                     Path="ActualHeight" />
+                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}"
+                                                     Path="DataContext.Shared.IconPadding" />
+                                        </MultiBinding>
+                                    </Image.Height>
+                                </Image>
+                                <TextBlock Text="{Binding Settings.Name}"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           MaxWidth="96"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{Binding DataContext.Shared.StripAccentBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                           FontSize="12">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility"
+                                                    Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding Slots.Count}"
+                                                                   Value="0" />
+                                                        <Condition Binding="{Binding DataContext.IsStripDragActive, ElementName=RootWindow}"
+                                                                   Value="True" />
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility"
+                                                            Value="Visible" />
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Grid>
                     </Button>
                 </DockPanel>
             </Border>
@@ -613,6 +803,14 @@
                             <TextBlock Margin="0,10,0,0"
                                        Text="Flash color (hex, e.g. #99FFFFFF)" />
                             <TextBox Text="{Binding FlashColorText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4,0,0"
+                                     Background="#FFFFFFFF"
+                                     Foreground="#FF222222"
+                                     BorderBrush="#FFAAAAAA" />
+
+                            <TextBlock Margin="0,10,0,0"
+                                       Text="Strip accent (hex, e.g. #FF000000) — drag line and empty-group name" />
+                            <TextBox Text="{Binding StripAccentColorText, UpdateSourceTrigger=PropertyChanged}"
                                      Margin="0,4,0,0"
                                      Background="#FFFFFFFF"
                                      Foreground="#FF222222"

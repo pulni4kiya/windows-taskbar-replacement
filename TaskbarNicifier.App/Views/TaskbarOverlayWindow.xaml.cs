@@ -134,7 +134,22 @@ public partial class TaskbarOverlayWindow : Window
                     AppKey = slot.AppKey,
                 };
                 var data = new DataObject(typeof(StripDragPayload), payload);
-                _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+                if (DataContext is TaskbarOverlayViewModel vm)
+                {
+                    try
+                    {
+                        vm.BeginStripReorderDrag();
+                        _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        vm.EndStripReorderDrag();
+                    }
+                }
+                else
+                {
+                    _ = DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+                }
             }
         }
     }
@@ -152,6 +167,20 @@ public partial class TaskbarOverlayWindow : Window
 
         e.Effects = DragDropEffects.Move;
         e.Handled = true;
+
+        if (DataContext is not TaskbarOverlayViewModel vm
+            || sender is not FrameworkElement fe
+            || fe.DataContext is not UserGroupViewModel targetVm)
+            return;
+
+        var ic = FindVisualChild<ItemsControl>(fe, "AppSlotsItems");
+        int visualInsert;
+        if (targetVm.IsSingleItemDisplay || ic is null || ic.Items.Count == 0)
+            visualInsert = ic?.Items.Count ?? 0;
+        else
+            visualInsert = GetHorizontalInsertIndex(ic, e.GetPosition(ic));
+
+        vm.UpdateStripInsertPreview(targetVm.Settings.Id, visualInsert);
     }
 
     private void AppSlot_PreviewDragEnter(object sender, DragEventArgs e)

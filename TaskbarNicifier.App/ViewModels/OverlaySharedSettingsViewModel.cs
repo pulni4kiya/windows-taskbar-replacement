@@ -25,6 +25,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
     private int _groupingVersion;
     private string _taskbarColorText;
     private string _flashColorText;
+    private string _stripAccentColorText;
 
     private const double DefaultGroupSpacingPx = 8;
 
@@ -53,6 +54,9 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
 
         _taskbarColorText = _settings.Layout.TaskbarColor;
         _flashColorText = _settings.Layout.FlashColor;
+        _stripAccentColorText = string.IsNullOrWhiteSpace(_settings.Layout.StripAccentColor)
+            ? "#FF000000"
+            : _settings.Layout.StripAccentColor;
 
         _persistDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -262,6 +266,36 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>ARGB hex for strip drag insertion line and empty-group placeholder text.</summary>
+    public string StripAccentColorText
+    {
+        get => _stripAccentColorText;
+        set
+        {
+            if (_stripAccentColorText == value) return;
+            _stripAccentColorText = value;
+            OnPropertyChanged();
+
+            if (TryParseColor(value, out _))
+            {
+                _settings.Layout.StripAccentColor = value.Trim();
+                OnPropertyChanged(nameof(StripAccentBrush));
+                _refreshAllOverlays();
+                PersistLayoutDebounced();
+            }
+        }
+    }
+
+    public Brush StripAccentBrush
+    {
+        get
+        {
+            var brush = new SolidColorBrush(ParseStripAccentColorOrDefault(_settings.Layout.StripAccentColor));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
     public AppMode AppMode
     {
         get => _settings.AppMode;
@@ -382,6 +416,14 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             return c;
 
         return (Color)ColorConverter.ConvertFromString("#99FFFFFF")!;
+    }
+
+    private static Color ParseStripAccentColorOrDefault(string? input)
+    {
+        if (TryParseColor(input, out var c))
+            return c;
+
+        return Colors.Black;
     }
 
     private void OnPropertyChanged([CallerMemberName] string? name = null)

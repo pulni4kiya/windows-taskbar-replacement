@@ -62,6 +62,10 @@ public sealed class LayoutSettings
     public string TaskbarColor { get; set; } = "#FF202020";
     /// <summary>Flash highlight color (ARGB hex or any WPF ColorConverter format).</summary>
     public string FlashColor { get; set; } = "#99FFFFFF";
+    /// <summary>
+    /// Strip drag affordances: insertion indicator and empty-group placeholder text (ARGB hex or WPF ColorConverter format).
+    /// </summary>
+    public string StripAccentColor { get; set; } = "#FF000000";
     /// <summary>Opacity for pinned app icons when the app has no open windows (0–1).</summary>
     public double PinnedAppOpacity { get; set; } = 0.70;
 }
