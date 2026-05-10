@@ -8,6 +8,8 @@ namespace TaskbarNicifier.App.Settings;
 
 public sealed class OverlaySettingsService
 {
+    internal const string PrimaryMonitorKey = "primary";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -31,7 +33,7 @@ public sealed class OverlaySettingsService
 
             var json = File.ReadAllText(SettingsPath);
             var s = JsonSerializer.Deserialize<OverlaySettings>(json, JsonOptions) ?? new OverlaySettings();
-            NormalizeGrouping(s);
+            Normalize(s);
             return s;
         }
         catch
@@ -43,18 +45,39 @@ public sealed class OverlaySettingsService
     private static OverlaySettings CreateDefaultSettings()
     {
         var s = new OverlaySettings();
-        NormalizeGrouping(s);
+        Normalize(s);
         return s;
     }
 
-    private static void NormalizeGrouping(OverlaySettings s)
+    private static void Normalize(OverlaySettings s)
     {
+        s.Layout ??= new LayoutSettings();
+        s.Integrated ??= new IntegratedOverlaySettings();
+        s.IntegratedByMonitor ??= new Dictionary<string, IntegratedOverlaySettings>(StringComparer.OrdinalIgnoreCase);
+
+        // Migration: if legacy Integrated bounds exist but per-monitor bounds are missing,
+        // seed the primary key from the legacy values.
+        if (s.IntegratedByMonitor.Count == 0 && HasAnyIntegratedBounds(s.Integrated))
+            s.IntegratedByMonitor[PrimaryMonitorKey] = CloneIntegratedBounds(s.Integrated);
+
         GroupingSettingsBootstrap.EnsureGroupingContainer(s);
         GroupingSettingsBootstrap.EnsureDefaultGroups(s.Grouping);
         GroupingSettingsBootstrap.NormalizeGroupAlignments(s.Grouping);
         s.Grouping.LastNonHiddenGroupByAppKey ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         NormalizePinnedAppsDictionary(s.Grouping);
     }
+
+    private static bool HasAnyIntegratedBounds(IntegratedOverlaySettings s)
+        => s.Left is not null || s.Top is not null || s.Width is not null || s.Height is not null;
+
+    private static IntegratedOverlaySettings CloneIntegratedBounds(IntegratedOverlaySettings s)
+        => new()
+        {
+            Left = s.Left,
+            Top = s.Top,
+            Width = s.Width,
+            Height = s.Height,
+        };
 
     private static void NormalizePinnedAppsDictionary(GroupingSettings g)
     {
@@ -84,6 +107,7 @@ public sealed class OverlaySettingsService
             if (!string.IsNullOrWhiteSpace(dir))
                 Directory.CreateDirectory(dir);
 
+            Normalize(settings);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             File.WriteAllText(SettingsPath, json);
         }

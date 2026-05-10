@@ -29,8 +29,15 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private readonly TaskbarPlacementService _taskbarPlacement = new();
     private readonly FullscreenDetector _fullscreenDetector = new();
     private readonly VirtualDesktopService _virtualDesktopService = new();
-    private readonly OverlaySettingsService _settingsService = new();
-    private OverlaySettings _settings;
+    private readonly TaskbarTarget _target;
+    private readonly OverlaySharedSettingsViewModel _shared;
+    private readonly Action<TaskbarOverlayViewModel>? _registerViewModel;
+    private readonly Action<TaskbarOverlayViewModel>? _unregisterViewModel;
+    private readonly PropertyChangedEventHandler _sharedPropertyChangedHandler;
+    private readonly OverlaySettings _settings;
+    private AppMode _appliedAppMode;
+    /// <summary>Bumps fingerprint for local attention/flash UI without affecting shared grouping.</summary>
+    private int _localStripRevision;
 
     private Window? _window;
     private Popup? _groupPopup;
@@ -61,7 +68,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public string ModeGlyph => Mode == OverlayMode.Integrated ? "⧉" : "⬚";
     public string ModeToolTip => Mode == OverlayMode.Integrated ? "Integrated mode" : "Standalone mode";
 
-    public bool IsDebugMode => _settings.AppMode == AppMode.Debug;
+    public OverlaySharedSettingsViewModel Shared => _shared;
+
+    public bool IsDebugMode => _shared.IsDebugMode;
+
+    public TimeSpan DragHoverDelay => _shared.DragHoverDelay;
     public Visibility ModeToggleVisibility => IsDebugMode ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Drag handle is only shown in debug mode while the overlay is standalone.</summary>
@@ -72,14 +83,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand OpenAppSlotMenuCommand { get; }
     public RelayCommand OpenCollapsedGroupMenuCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
-    public RelayCommand ExitCommand { get; }
     public RelayCommand HideAppCommand { get; }
     public RelayCommand UnhideAppCommand { get; }
     public RelayCommand UnhideGroupCommand { get; }
     public RelayCommand OpenGroupSettingsCommand { get; }
     public RelayCommand CloseGroupSettingsCommand { get; }
     public RelayCommand PickEditingGroupColorCommand { get; }
-    public RelayCommand AddUserStripGroupCommand { get; }
     public RelayCommand MoveGroupLeftCommand { get; }
     public RelayCommand MoveGroupRightCommand { get; }
     public RelayCommand PinAppCommand { get; }
@@ -88,8 +97,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private string? _lastLiveFingerprint;
-    private int _groupingVersion;
     private int _lastAppliedGroupingVersion = -1;
+    private int _lastAppliedStripRevision = -1;
 
     // Tracks windows that have requested attention (taskbar flash).
     private readonly HashSet<IntPtr> _attentionHwnds = new();
@@ -103,33 +112,41 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public bool IsExternalDragActive
         => DateTime.UtcNow - _externalDragLastSeenUtc < TimeSpan.FromMilliseconds(250);
 
-    public TaskbarOverlayViewModel()
+    internal TaskbarOverlayViewModel(
+        TaskbarTarget target,
+        OverlaySharedSettingsViewModel shared,
+        Action<TaskbarOverlayViewModel>? registerViewModel = null,
+        Action<TaskbarOverlayViewModel>? unregisterViewModel = null)
     {
+        _target = target;
+        _shared = shared;
+        _settings = shared.Settings;
+        _registerViewModel = registerViewModel;
+        _unregisterViewModel = unregisterViewModel;
+
+        _sharedPropertyChangedHandler = OnSharedPropertyChanged;
+
         ToggleModeCommand = new RelayCommand(_ => ToggleMode());
         OpenAppSlotMenuCommand = new RelayCommand(p => OpenAppSlotMenu(p));
         OpenCollapsedGroupMenuCommand = new RelayCommand(p => OpenCollapsedGroupMenu(p));
         OpenSettingsCommand = new RelayCommand(_ => ToggleSettingsPopup());
-        ExitCommand = new RelayCommand(_ => ExitApplication());
         HideAppCommand = new RelayCommand(p => HideApp(p));
         UnhideAppCommand = new RelayCommand(p => UnhideApp(p));
         UnhideGroupCommand = new RelayCommand(p => UnhideGroup(p));
         OpenGroupSettingsCommand = new RelayCommand(p => OpenGroupSettings(p));
         CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
         PickEditingGroupColorCommand = new RelayCommand(_ => PickEditingGroupColor());
-        AddUserStripGroupCommand = new RelayCommand(_ => AddUserStripGroup());
         MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
         PinAppCommand = new RelayCommand(p => PinApp(p));
         UnpinAppCommand = new RelayCommand(p => UnpinApp(p));
 
-        _settings = _settingsService.Load();
         ApplyAppModeToOverlayMode();
-        _taskbarColorText = _settings.Layout.TaskbarColor;
-        _flashColorText = _settings.Layout.FlashColor;
+        _appliedAppMode = _settings.AppMode;
 
         _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromMilliseconds(GetClampedRefreshIntervalMs(_settings.RefreshIntervalMs)),
+            Interval = TimeSpan.FromMilliseconds(GetClampedRefreshIntervalMs(_shared.RefreshIntervalMs)),
         };
         _refreshTimer.Tick += (_, _) => Refresh();
 
@@ -141,6 +158,103 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         {
             _persistDebounceTimer.Stop();
             PersistIntegratedBoundsIfNeeded();
+        };
+
+        _shared.PropertyChanged += _sharedPropertyChangedHandler;
+
+        _registerViewModel?.Invoke(this);
+    }
+
+    private void OnSharedPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(OverlaySharedSettingsViewModel.RefreshIntervalMs))
+        {
+            _refreshTimer.Interval = TimeSpan.FromMilliseconds(GetClampedRefreshIntervalMs(_shared.RefreshIntervalMs));
+        }
+        else if (e.PropertyName == nameof(OverlaySharedSettingsViewModel.AppMode))
+        {
+            ApplyAppModeFromShared();
+        }
+    }
+
+    private void ApplyAppModeFromShared()
+    {
+        var appModeBefore = _appliedAppMode;
+        _appliedAppMode = _shared.AppMode;
+
+        var modeBefore = Mode;
+        ApplyAppModeToOverlayMode();
+        var modeAfter = Mode;
+
+        if (_window is not null && (appModeBefore != _shared.AppMode || modeBefore != modeAfter))
+            ApplyModeWindowSettings();
+
+        OnPropertyChanged(nameof(IsDebugMode));
+        OnPropertyChanged(nameof(ModeToggleVisibility));
+        OnPropertyChanged(nameof(DragHandleVisibility));
+    }
+
+    internal void RefreshFromSharedNotification()
+    {
+        _lastLiveFingerprint = null;
+        Refresh();
+    }
+
+    private IntegratedOverlaySettings GetOrCreateIntegratedSettingsForTarget()
+    {
+        _settings.IntegratedByMonitor ??= new Dictionary<string, IntegratedOverlaySettings>(StringComparer.OrdinalIgnoreCase);
+        if (_settings.IntegratedByMonitor.TryGetValue(_target.MonitorKey, out var existing))
+            return existing;
+
+        if (_target.IsPrimary && (_settings.Integrated.Left is not null || _settings.Integrated.Top is not null ||
+                                  _settings.Integrated.Width is not null || _settings.Integrated.Height is not null))
+        {
+            existing = new IntegratedOverlaySettings
+            {
+                Left = _settings.Integrated.Left,
+                Top = _settings.Integrated.Top,
+                Width = _settings.Integrated.Width,
+                Height = _settings.Integrated.Height,
+            };
+        }
+        else
+        {
+            existing = new IntegratedOverlaySettings();
+        }
+
+        _settings.IntegratedByMonitor[_target.MonitorKey] = existing;
+        return existing;
+    }
+
+    private NativeMethods.RECT GetTaskbarRectForTargetOrFallback()
+    {
+        if (_target.TaskbarRect is { } r)
+            return r;
+
+        // Best-effort fallback derived from monitor/work-area delta.
+        // If there's no detectable taskbar area, assume a bottom strip.
+        var mon = _target.MonitorInfo.rcMonitor;
+        var work = _target.MonitorInfo.rcWork;
+
+        // If work area is smaller, infer taskbar region.
+        if (work.Bottom < mon.Bottom)
+        {
+            return new NativeMethods.RECT
+            {
+                Left = mon.Left,
+                Right = mon.Right,
+                Top = work.Bottom,
+                Bottom = mon.Bottom
+            };
+        }
+
+        const int assumedHeight = 48;
+        return new NativeMethods.RECT
+        {
+            Left = mon.Left,
+            Right = mon.Right,
+            Top = mon.Bottom - assumedHeight,
+            Bottom = mon.Bottom
         };
     }
 
@@ -251,194 +365,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public IEnumerable<GroupDisplayType> AllGroupDisplayTypes { get; } =
         Enum.GetValues<GroupDisplayType>();
 
-    public bool LockPosition
-    {
-        get => _settings.Layout.LockPosition;
-        set
-        {
-            if (_settings.Layout.LockPosition == value) return;
-            _settings.Layout.LockPosition = value;
-            OnPropertyChanged();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    public double IconPadding
-    {
-        get => _settings.Layout.IconPadding;
-        set
-        {
-            var v = Math.Max(0, value);
-            if (Math.Abs(_settings.Layout.IconPadding - v) < 0.001) return;
-            _settings.Layout.IconPadding = v;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IconSpacing));
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    public double IconSpacing
-    {
-        get => _settings.Layout.IconSpacing;
-        set
-        {
-            var v = Math.Max(0, value);
-            if (Math.Abs(_settings.Layout.IconSpacing - v) < 0.001) return;
-            _settings.Layout.IconSpacing = v;
-            OnPropertyChanged();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    private const double DefaultGroupSpacingPx = 8;
-
-    public double GroupSpacing
-    {
-        get => _settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx;
-        set
-        {
-            var v = Math.Max(0, value);
-            if (Math.Abs((_settings.Layout.GroupSpacing ?? DefaultGroupSpacingPx) - v) < 0.001) return;
-            _settings.Layout.GroupSpacing = v;
-            OnPropertyChanged();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    public int RefreshIntervalMs
-    {
-        get => GetClampedRefreshIntervalMs(_settings.RefreshIntervalMs);
-        set
-        {
-            var v = GetClampedRefreshIntervalMs(value);
-            if (_settings.RefreshIntervalMs == v) return;
-            _settings.RefreshIntervalMs = v;
-            _refreshTimer.Interval = TimeSpan.FromMilliseconds(v);
-            OnPropertyChanged();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    public double DragHoverDelaySeconds
-    {
-        get => GetClampedDragHoverDelaySeconds(_settings.DragHoverDelaySeconds);
-        set
-        {
-            var v = GetClampedDragHoverDelaySeconds(value);
-            if (Math.Abs(_settings.DragHoverDelaySeconds - v) < 0.0001) return;
-            _settings.DragHoverDelaySeconds = v;
-            OnPropertyChanged();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    public TimeSpan DragHoverDelay => TimeSpan.FromSeconds(DragHoverDelaySeconds);
-
-    public double PinnedAppOpacity
-    {
-        get => GetClampedPinnedAppOpacity(_settings.Layout.PinnedAppOpacity);
-        set
-        {
-            var v = GetClampedPinnedAppOpacity(value);
-            if (Math.Abs(_settings.Layout.PinnedAppOpacity - v) < 0.0001) return;
-            _settings.Layout.PinnedAppOpacity = v;
-            OnPropertyChanged();
-            _groupingVersion++;
-            Refresh();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
-    private static double GetClampedPinnedAppOpacity(double value)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-            return 0.70;
-        if (value < 0.15) return 0.15;
-        if (value > 1.0) return 1.0;
-        return value;
-    }
-
-    private static double GetClampedDragHoverDelaySeconds(double value)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-            return 0.3;
-        if (value < 0.05) return 0.05;
-        if (value > 2.0) return 2.0;
-        return value;
-    }
-
-    private string _taskbarColorText;
-    public string TaskbarColorText
-    {
-        get => _taskbarColorText;
-        set
-        {
-            if (_taskbarColorText == value) return;
-            _taskbarColorText = value;
-            OnPropertyChanged();
-
-            if (TryParseColor(value, out _))
-            {
-                _settings.Layout.TaskbarColor = value.Trim();
-                OnPropertyChanged(nameof(TaskbarBrush));
-                PersistLayoutSettingsDebounced();
-            }
-        }
-    }
-
-    public Brush TaskbarBrush
-    {
-        get
-        {
-            var brush = new SolidColorBrush(ParseColorOrDefault(_settings.Layout.TaskbarColor));
-            brush.Freeze();
-            return brush;
-        }
-    }
-
-    private string _flashColorText;
-    public string FlashColorText
-    {
-        get => _flashColorText;
-        set
-        {
-            if (_flashColorText == value) return;
-            _flashColorText = value;
-            OnPropertyChanged();
-
-            if (TryParseColor(value, out _))
-            {
-                _settings.Layout.FlashColor = value.Trim();
-                OnPropertyChanged(nameof(FlashBrush));
-                PersistLayoutSettingsDebounced();
-            }
-        }
-    }
-
-    public Brush FlashBrush
-    {
-        get
-        {
-            var brush = new SolidColorBrush(ParseFlashColorOrDefault(_settings.Layout.FlashColor));
-            brush.Freeze();
-            return brush;
-        }
-    }
-
     private void ToggleSettingsPopup()
     {
         IsSettingsOpen = !IsSettingsOpen;
-    }
-
-    private static void ExitApplication()
-    {
-        Application.Current?.Shutdown();
-    }
-
-    private void PersistLayoutSettingsDebounced()
-    {
-        _persistDebounceTimer.Stop();
-        _persistDebounceTimer.Start();
     }
 
     private static int GetClampedRefreshIntervalMs(int value)
@@ -500,13 +429,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         _window = window;
         _window.LocationChanged += OnWindowLocationOrSizeChanged;
         _window.SizeChanged += OnWindowLocationOrSizeChanged;
-        OnPropertyChanged(nameof(TaskbarBrush));
-        OnPropertyChanged(nameof(TaskbarColorText));
         ApplyModeWindowSettings();
     }
 
     public void DetachWindow()
     {
+        _shared.PropertyChanged -= _sharedPropertyChangedHandler;
+        _unregisterViewModel?.Invoke(this);
         if (_window is not null)
         {
             _window.LocationChanged -= OnWindowLocationOrSizeChanged;
@@ -538,24 +467,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         ApplyModeWindowSettings(previousMode);
     }
 
-    public AppMode AppMode
-    {
-        get => _settings.AppMode;
-        set
-        {
-            if (_settings.AppMode == value) return;
-            _settings.AppMode = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsDebugMode));
-            OnPropertyChanged(nameof(ModeToggleVisibility));
-            OnPropertyChanged(nameof(DragHandleVisibility));
-
-            ApplyAppModeToOverlayMode();
-            ApplyModeWindowSettings();
-            PersistLayoutSettingsDebounced();
-        }
-    }
-
     private void ApplyAppModeToOverlayMode()
     {
         if (!IsDebugMode)
@@ -563,7 +474,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     }
 
     private string ComputeLiveFingerprint(System.Collections.Generic.List<AppWindowItem> windows)
-        => string.Join("|", windows.Select(w => $"{AppIdentity.GetAppKey(w)}:{w.Hwnd.ToInt64():X}:{w.Title}")) + "|gv:" + _groupingVersion;
+        => string.Join("|", windows.Select(w => $"{AppIdentity.GetAppKey(w)}:{w.Hwnd.ToInt64():X}:{w.Title}")) + "|gv:" + _shared.GroupingVersion + "|sr:" + _localStripRevision;
 
     private void Refresh()
     {
@@ -581,7 +492,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
 
         var fp = ComputeLiveFingerprint(windows);
-        if (fp == _lastLiveFingerprint && _groupingVersion == _lastAppliedGroupingVersion)
+        if (fp == _lastLiveFingerprint
+            && _shared.GroupingVersion == _lastAppliedGroupingVersion
+            && _localStripRevision == _lastAppliedStripRevision)
             return;
 
         // Rebuilding replaces slot visuals and invalidates the window picker's PlacementTarget
@@ -592,7 +505,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return;
 
         _lastLiveFingerprint = fp;
-        _lastAppliedGroupingVersion = _groupingVersion;
+        _lastAppliedGroupingVersion = _shared.GroupingVersion;
+        _lastAppliedStripRevision = _localStripRevision;
 
         RebuildStripGroups(windows);
     }
@@ -778,18 +692,15 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private System.Collections.Generic.List<AppWindowItem> ApplyContextFilters(System.Collections.Generic.List<AppWindowItem> windows)
     {
-        var taskbarHwnd = _taskbarPlacement.GetPrimaryTaskbarHwnd();
-        var taskbarMonitor = taskbarHwnd == IntPtr.Zero
-            ? IntPtr.Zero
-            : Interop.NativeMethods.MonitorFromWindow(taskbarHwnd, Interop.NativeMethods.MONITOR_DEFAULTTONEAREST);
+        var overlayMonitor = _target.MonitorHandle;
 
         return windows
             .Where(w =>
             {
-                if (taskbarMonitor != IntPtr.Zero)
+                if (_shared.FilterWindowsByScreen && overlayMonitor != IntPtr.Zero)
                 {
                     var winMonitor = Interop.NativeMethods.MonitorFromWindow(w.Hwnd, Interop.NativeMethods.MONITOR_DEFAULTTONEAREST);
-                    if (winMonitor != taskbarMonitor)
+                    if (winMonitor != overlayMonitor)
                         return false;
                 }
 
@@ -803,18 +714,20 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return;
 
+        var taskbarRect = GetTaskbarRectForTargetOrFallback();
+
         if (Mode == OverlayMode.Integrated)
         {
             _window.ShowInTaskbar = false;
             _window.Topmost = true;
 
-            if (_taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
+            if (true)
             {
-                if (!TryApplySavedIntegratedBounds(rect))
+                if (!TryApplySavedIntegratedBounds(taskbarRect))
                 {
                     var desiredHeight = (int)Math.Round(_window.Height);
                     var b = _taskbarPlacement.GetIntegratedOverlayBounds(
-                        rect,
+                        taskbarRect,
                         desiredHeight: desiredHeight,
                         reserveLeft: IntegratedReserveLeftPx,
                         reserveRight: IntegratedReserveRightPx);
@@ -831,18 +744,18 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _window.ShowInTaskbar = true;
             _window.Topmost = false;
 
-            if (previousMode == OverlayMode.Integrated && _taskbarPlacement.TryGetPrimaryTaskbarRect(out var rect))
+            if (previousMode == OverlayMode.Integrated)
             {
-                var screenH = SystemParameters.PrimaryScreenHeight;
-                var isBottomTaskbar = rect.Top > screenH / 2;
+                var monitor = _target.MonitorInfo.rcMonitor;
+                var monitorMidY = monitor.Top + (monitor.Bottom - monitor.Top) / 2;
+                var isBottomTaskbar = taskbarRect.Top > monitorMidY;
 
                 var newLeft = _window.Left;
                 var newTop = isBottomTaskbar
-                    ? rect.Top - _window.Height - StandaloneGapFromTaskbarPx
-                    : rect.Bottom + StandaloneGapFromTaskbarPx;
+                    ? taskbarRect.Top - _window.Height - StandaloneGapFromTaskbarPx
+                    : taskbarRect.Bottom + StandaloneGapFromTaskbarPx;
 
-                newTop = Math.Max(0, newTop);
-                _window.Left = Math.Max(0, newLeft);
+                _window.Left = Math.Max(monitor.Left, newLeft);
                 _window.Top = newTop;
             }
             else if (_window.Left == 0 && _window.Top == 0)
@@ -870,7 +783,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return false;
 
-        var s = _settings.Integrated;
+        var s = GetOrCreateIntegratedSettingsForTarget();
         if (s.Left is null || s.Top is null || s.Width is null || s.Height is null)
             return false;
 
@@ -897,9 +810,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return desiredTop;
 
-        if (!_taskbarPlacement.TryGetPrimaryTaskbarMonitorInfo(out var mi))
-            return desiredTop;
-
+        var mi = _target.MonitorInfo;
         var monitorBottom = mi.rcMonitor.Bottom;
         var newTop = desiredTop;
 
@@ -920,13 +831,23 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (Mode == OverlayMode.Integrated)
         {
-            _settings.Integrated.Left = _window.Left;
-            _settings.Integrated.Top = _window.Top;
-            _settings.Integrated.Width = _window.Width;
-            _settings.Integrated.Height = _window.Height;
+            var s = GetOrCreateIntegratedSettingsForTarget();
+            s.Left = _window.Left;
+            s.Top = _window.Top;
+            s.Width = _window.Width;
+            s.Height = _window.Height;
+
+            // Keep legacy primary fields in sync for backwards compatibility.
+            if (_target.IsPrimary)
+            {
+                _settings.Integrated.Left = s.Left;
+                _settings.Integrated.Top = s.Top;
+                _settings.Integrated.Width = s.Width;
+                _settings.Integrated.Height = s.Height;
+            }
         }
 
-        _settingsService.Save(_settings);
+        _shared.SaveSettings();
     }
 
     private void ApplyFullscreenVisibility()
@@ -941,8 +862,12 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return;
         }
 
-        var isFullscreen = _fullscreenDetector.IsForegroundWindowFullscreenOnItsMonitor();
-        var desiredVisibility = isFullscreen ? Visibility.Hidden : Visibility.Visible;
+        var isFullscreenHere =
+            _fullscreenDetector.TryGetForegroundFullscreenMonitor(out var fullscreenMonitor) &&
+            fullscreenMonitor != IntPtr.Zero &&
+            fullscreenMonitor == _target.MonitorHandle;
+
+        var desiredVisibility = isFullscreenHere ? Visibility.Hidden : Visibility.Visible;
         if (_window.Visibility != desiredVisibility)
             _window.Visibility = desiredVisibility;
     }
@@ -1277,7 +1202,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_attentionHwnds.Add(hwnd))
         {
             // Force rebuild even if fingerprint didn't change so the UI can reflect attention state.
-            _groupingVersion++;
+            _localStripRevision++;
             Refresh();
         }
     }
@@ -1296,7 +1221,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (_attentionHwnds.Remove(hwnd))
         {
-            _groupingVersion++;
+            _localStripRevision++;
             Refresh();
         }
     }
@@ -1312,7 +1237,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (removedAny)
         {
-            _groupingVersion++;
+            _localStripRevision++;
             Refresh();
         }
     }
@@ -1553,29 +1478,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         BumpGroupingAndRebuild();
     }
 
-    private void AddUserStripGroup()
-    {
-        var gs = _settings.Grouping;
-        GroupingSettingsBootstrap.EnsureDefaultGroups(gs);
-
-        var id = Guid.NewGuid().ToString("N");
-        var row = new UserTaskbarGroupSettings
-        {
-            Id = id,
-            Name = "New group",
-            Color = "#40000000",
-            DisplayType = GroupDisplayType.Expanded,
-        };
-
-        var hiddenIdx = gs.Groups.FindIndex(x => string.Equals(x.Id, gs.HiddenGroupId, StringComparison.Ordinal));
-        if (hiddenIdx >= 0)
-            gs.Groups.Insert(hiddenIdx, row);
-        else
-            gs.Groups.Add(row);
-
-        BumpGroupingAndRebuild();
-    }
-
     private void PickEditingGroupColor()
     {
         if (EditingGroup is null)
@@ -1596,12 +1498,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public void BumpGroupingAndRebuild()
     {
-        _groupingVersion++;
-        var windows = _windowEnumerator.GetOpenAppWindows();
-        windows = ApplyContextFilters(windows);
-        _lastLiveFingerprint = null;
-        Refresh();
-        PersistLayoutSettingsDebounced();
+        _shared.BumpGroupingAndRefreshAll();
     }
 
     public void ReorderAppsInGroup(string groupId, IReadOnlyList<string> visibleKeysNewOrder)
