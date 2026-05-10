@@ -12,12 +12,12 @@ It allows you to organize the applications into groups for easier navigation. Yo
 - Middle click to open new instance or close one when you have several opened
 - Open apps while dragging something and hovering over them
 - Pin apps so that they show even when not running for quick access
-
-## Missing but (almost) planned features
 - Show taskbar on each monitor
     - There's currently only one taskbar on the main monitor
+
+## Missing but (almost) planned features
 - Configuration for how to interrach with monitors and windows virtual desktops
-    - Currently it shows apps opened on the current virtual desktop on the main screen
+    - Currently it shows apps opened on the current virtual desktop and current screen
 
 ## Disclaimer
 This app was entirely vibe coded for my own purposes. No guarantees of any sort. I am actively using it though, so it shouldn't be *too* bad.
