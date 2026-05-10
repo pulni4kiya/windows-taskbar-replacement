@@ -343,7 +343,7 @@ public partial class TaskbarOverlayWindow : Window
 
         if (msg == NativeMethods.WM_NCHITTEST)
         {
-            if (DataContext is TaskbarOverlayViewModel vm && !vm.LockPosition)
+            if (DataContext is TaskbarOverlayViewModel vm && !vm.Shared.LockPosition)
             {
                 var ht = HitTestResize(lParam);
                 if (ht != NativeMethods.HTCLIENT)

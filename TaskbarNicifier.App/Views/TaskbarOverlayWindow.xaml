@@ -50,7 +50,7 @@
         </Style>
         <DataTemplate DataType="{x:Type vm:UserGroupViewModel}">
             <Border x:Name="GroupBorder"
-                    Margin="{Binding DataContext.GroupSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                    Margin="{Binding DataContext.Shared.GroupSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                     Padding="2"
                     CornerRadius="10"
                     Background="{Binding GroupBackground}"
@@ -118,7 +118,7 @@
                                     <Button VerticalAlignment="Stretch"
                                             x:Name="AppSlotButton"
                                             Style="{StaticResource IconButtonStyle}"
-                                            Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                                            Margin="{Binding DataContext.Shared.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
                                             Padding="0"
                                             PreviewMouseLeftButtonDown="AppSlot_PreviewMouseLeftButtonDown"
                                             PreviewMouseUp="AppSlot_PreviewMouseUp"
@@ -222,7 +222,7 @@
                                             <Border x:Name="FlashOverlay"
                                                     CornerRadius="4"
                                                     BorderThickness="0"
-                                                    Background="{Binding DataContext.FlashBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    Background="{Binding DataContext.Shared.FlashBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     Opacity="0" />
                                             <Border x:Name="HoverOverlay"
                                                     CornerRadius="4"
@@ -230,7 +230,7 @@
                                                     Background="#99FFFFFF"
                                                     Opacity="0"
                                                     IsHitTestVisible="False" />
-                                            <Border Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}">
+                                            <Border Padding="{Binding DataContext.Shared.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}">
                                                 <Image Source="{Binding Icon}"
                                                        Stretch="Uniform">
                                                     <Image.Style>
@@ -239,7 +239,7 @@
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding IsRunning}" Value="False">
                                                                     <Setter Property="Opacity"
-                                                                            Value="{Binding DataContext.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                                            Value="{Binding DataContext.Shared.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -247,13 +247,13 @@
                                                     <Image.Width>
                                                         <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                                             <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
                                                         </MultiBinding>
                                                     </Image.Width>
                                                     <Image.Height>
                                                         <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                                             <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
                                                         </MultiBinding>
                                                     </Image.Height>
                                                 </Image>
@@ -288,8 +288,8 @@
                     </StackPanel>
                     <Button x:Name="CollapsedGroupButton"
                             VerticalAlignment="Stretch"
-                            Margin="{Binding DataContext.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
-                            Padding="{Binding DataContext.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
+                            Margin="{Binding DataContext.Shared.IconSpacing, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToRightMargin}}"
+                            Padding="{Binding DataContext.Shared.IconPadding, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource DoubleToUniformThickness}}"
                             PreviewMouseUp="CollapsedGroup_PreviewMouseUp"
                             Command="{Binding DataContext.OpenCollapsedGroupMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                         <Button.Style>
@@ -389,7 +389,7 @@
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding CollapsedIconUsePinnedOpacity}" Value="True">
                                             <Setter Property="Opacity"
-                                                    Value="{Binding DataContext.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                    Value="{Binding DataContext.Shared.PinnedAppOpacity, RelativeSource={RelativeSource AncestorType=Window}}" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -397,13 +397,13 @@
                             <Image.Width>
                                 <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                     <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
                                 </MultiBinding>
                             </Image.Width>
                             <Image.Height>
                                 <MultiBinding Converter="{StaticResource ButtonIconSize}">
                                     <Binding RelativeSource="{RelativeSource AncestorType=Button}" Path="ActualHeight" />
-                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.IconPadding" />
+                                    <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="DataContext.Shared.IconPadding" />
                                 </MultiBinding>
                             </Image.Height>
                         </Image>
@@ -412,11 +412,8 @@
             </Border>
         </DataTemplate>
     </Window.Resources>
-    <Window.DataContext>
-        <vm:TaskbarOverlayViewModel />
-    </Window.DataContext>
 
-    <Border Background="{Binding TaskbarBrush}"
+    <Border Background="{Binding Shared.TaskbarBrush}"
             CornerRadius="14"
             Padding="0">
         <DockPanel LastChildFill="True" VerticalAlignment="Stretch">
@@ -503,7 +500,8 @@
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="12"
-                            MinWidth="280">
+                            MinWidth="280"
+                            DataContext="{Binding Shared}">
                         <StackPanel TextElement.Foreground="#FF222222">
                             <TextBlock Text="Settings"
                                        FontSize="14"
@@ -514,6 +512,16 @@
                                       Margin="0,0,0,8"
                                       ToolTip="Prevent resizing the overlay window"
                                       IsChecked="{Binding LockPosition, Mode=TwoWay}" />
+
+                            <CheckBox Content="Show taskbar on each monitor"
+                                      Margin="0,0,0,8"
+                                      ToolTip="Create one overlay per monitor (each remembers its own position)"
+                                      IsChecked="{Binding ShowTaskbarOnAllMonitors, Mode=TwoWay}" />
+
+                            <CheckBox Content="Filter windows by screen"
+                                      Margin="0,0,0,8"
+                                      ToolTip="If enabled, each monitor's overlay shows only windows on that monitor"
+                                      IsChecked="{Binding FilterWindowsByScreen, Mode=TwoWay}" />
 
                             <TextBlock Text="{Binding IconPadding, StringFormat=Icon padding: {0:0}}" />
                             <Slider Minimum="0"
@@ -564,6 +572,20 @@
                                     SmallChange="0.05"
                                     LargeChange="0.1"
                                     Value="{Binding DragHoverDelaySeconds, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="Show pinned apps" />
+                            <ComboBox SelectedValue="{Binding PinnedAppsDisplayMode, Mode=TwoWay}"
+                                      SelectedValuePath="Tag"
+                                      Margin="0,4,0,8"
+                                      ToolTip="Where to show shortcuts for pinned apps that have no window on this monitor">
+                                <ComboBoxItem Content="Where pinned"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.WherePinned}" />
+                                <ComboBoxItem Content="On all screens"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.AllScreens}" />
+                                <ComboBoxItem Content="On main screen"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.MainScreen}" />
+                            </ComboBox>
 
                             <TextBlock Margin="0,8,0,0"
                                        Text="{Binding PinnedAppOpacity, StringFormat=Pinned app opacity: {0:0.00}}" />
