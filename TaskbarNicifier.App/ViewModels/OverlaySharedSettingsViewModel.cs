@@ -108,6 +108,19 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    public PinnedAppsDisplayMode PinnedAppsDisplayMode
+    {
+        get => _settings.Layout.PinnedAppsDisplayMode;
+        set
+        {
+            if (_settings.Layout.PinnedAppsDisplayMode == value) return;
+            _settings.Layout.PinnedAppsDisplayMode = value;
+            OnPropertyChanged();
+            _refreshAllOverlays();
+            PersistLayoutDebounced();
+        }
+    }
+
     public double IconPadding
     {
         get => _settings.Layout.IconPadding;

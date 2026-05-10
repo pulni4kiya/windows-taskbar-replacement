@@ -574,6 +574,20 @@
                                     Value="{Binding DragHoverDelaySeconds, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,8,0,0"
+                                       Text="Show pinned apps" />
+                            <ComboBox SelectedValue="{Binding PinnedAppsDisplayMode, Mode=TwoWay}"
+                                      SelectedValuePath="Tag"
+                                      Margin="0,4,0,8"
+                                      ToolTip="Where to show shortcuts for pinned apps that have no window on this monitor">
+                                <ComboBoxItem Content="Where pinned"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.WherePinned}" />
+                                <ComboBoxItem Content="On all screens"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.AllScreens}" />
+                                <ComboBoxItem Content="On main screen"
+                                              Tag="{x:Static settings:PinnedAppsDisplayMode.MainScreen}" />
+                            </ComboBox>
+
+                            <TextBlock Margin="0,8,0,0"
                                        Text="{Binding PinnedAppOpacity, StringFormat=Pinned app opacity: {0:0.00}}" />
                             <Slider Minimum="0.15"
                                     Maximum="1.0"

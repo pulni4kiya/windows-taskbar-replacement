@@ -1,5 +1,16 @@
 namespace TaskbarNicifier.App.Settings;
 
+/// <summary>Where closed pinned-app shortcuts appear when using multiple overlays.</summary>
+public enum PinnedAppsDisplayMode
+{
+    /// <summary>Show the shortcut only on the monitor where the app was pinned.</summary>
+    WherePinned = 0,
+    /// <summary>Show the shortcut on every active overlay.</summary>
+    AllScreens = 1,
+    /// <summary>Show the shortcut only on the primary monitor overlay.</summary>
+    MainScreen = 2,
+}
+
 public sealed class OverlaySettings
 {
     public AppMode AppMode { get; set; } = AppMode.Normal;
@@ -40,6 +51,9 @@ public sealed class LayoutSettings
     /// When false, all overlays show windows across all monitors (still filtered by virtual desktop).
     /// </summary>
     public bool FilterWindowsByScreen { get; set; } = true;
+
+    /// <summary>Where to show pinned shortcuts for apps that have no window on this overlay.</summary>
+    public PinnedAppsDisplayMode PinnedAppsDisplayMode { get; set; } = PinnedAppsDisplayMode.WherePinned;
 
     public double IconPadding { get; set; } = 6;
     public double IconSpacing { get; set; } = 14;

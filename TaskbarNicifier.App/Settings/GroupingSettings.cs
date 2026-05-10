@@ -12,6 +12,8 @@ public sealed class PinnedAppSettings
     public string? ProcessPath { get; set; }
     public string? IdentityProcessName { get; set; }
     public string? ProcessName { get; set; }
+    /// <summary>Monitor key of the overlay where the user pinned this app (matches per-monitor taskbar target id).</summary>
+    public string? PinnedMonitorKey { get; set; }
 }
 
 public enum GroupDisplayType

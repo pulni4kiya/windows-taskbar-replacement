@@ -603,6 +603,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     if (wins.Count == 0 && !isPinned)
                         continue;
 
+                    if (wins.Count == 0 && isPinned && !ShouldShowClosedPinnedShortcut(pin))
+                        continue;
+
                     if (isPinned && pin is not null && wins.Count > 0)
                         UpdatePinnedMetadataFromWindow(pin, PickRepresentativeWindow(wins));
 
@@ -688,6 +691,22 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether a pinned shortcut (no open windows on this overlay) should appear here, per <see cref="LayoutSettings.PinnedAppsDisplayMode"/>.
+    /// </summary>
+    private bool ShouldShowClosedPinnedShortcut(PinnedAppSettings? pin)
+    {
+        return _settings.Layout.PinnedAppsDisplayMode switch
+        {
+            PinnedAppsDisplayMode.AllScreens => true,
+            PinnedAppsDisplayMode.MainScreen => _target.IsPrimary,
+            PinnedAppsDisplayMode.WherePinned => string.IsNullOrWhiteSpace(pin?.PinnedMonitorKey)
+                ? true
+                : string.Equals(pin.PinnedMonitorKey, _target.MonitorKey, StringComparison.OrdinalIgnoreCase),
+            _ => true,
+        };
     }
 
     private System.Collections.Generic.List<AppWindowItem> ApplyContextFilters(System.Collections.Generic.List<AppWindowItem> windows)
@@ -1271,6 +1290,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         gs.PinnedAppsByKey ??= new Dictionary<string, PinnedAppSettings>(StringComparer.OrdinalIgnoreCase);
         var pin = new PinnedAppSettings();
         UpdatePinnedMetadataFromWindow(pin, PickRepresentativeWindow(slot.Windows));
+        pin.PinnedMonitorKey = _target.MonitorKey;
         gs.PinnedAppsByKey[slot.AppKey] = pin;
         BumpGroupingAndRebuild();
     }
