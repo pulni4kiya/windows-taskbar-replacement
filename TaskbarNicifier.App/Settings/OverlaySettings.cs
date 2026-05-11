@@ -40,6 +40,9 @@ public sealed class IntegratedOverlaySettings
 
 public sealed class LayoutSettings
 {
+    /// <summary>Bumped when new layout fields are added so <see cref="OverlaySettingsService"/> can migrate defaults.</summary>
+    public int LayoutSchemaVersion { get; set; }
+
     /// <summary>When true, the overlay cannot be resized (edge resize handles disabled).</summary>
     public bool LockPosition { get; set; }
 
@@ -68,5 +71,14 @@ public sealed class LayoutSettings
     public string StripAccentColor { get; set; } = "#FF000000";
     /// <summary>Opacity for pinned app icons when the app has no open windows (0–1).</summary>
     public double PinnedAppOpacity { get; set; } = 0.70;
+
+    /// <summary>When true, show a small instance count on app buttons with more than one open window.</summary>
+    public bool ShowInstanceCountBadge { get; set; } = true;
+
+    /// <summary>Font size (px) for the instance-count badge.</summary>
+    public double InstanceCountBadgeFontSize { get; set; } = 10;
+
+    /// <summary>Badge text color (ARGB hex or WPF ColorConverter format).</summary>
+    public string InstanceCountBadgeColor { get; set; } = "#FFFFFFFF";
 }
 

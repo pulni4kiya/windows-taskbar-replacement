@@ -41,6 +41,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private Window? _window;
     private Popup? _groupPopup;
+    private int _suppressClosePopupsOnDeactivate;
 
     private const int IntegratedReserveLeftPx = 220;
     private const int IntegratedReserveRightPx = 360;
@@ -513,6 +514,44 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         }
         _groupPopup = null;
         _window = null;
+    }
+
+    /// <summary>Closes settings, group settings, and the instance picker. Skipped while a modal dialog may deactivate the overlay.</summary>
+    public void CloseActivePopups()
+    {
+        if (_suppressClosePopupsOnDeactivate > 0)
+            return;
+
+        if (_groupPopup?.IsOpen == true)
+            _groupPopup.IsOpen = false;
+
+        IsSettingsOpen = false;
+
+        if (IsGroupSettingsOpen)
+            IsGroupSettingsOpen = false;
+    }
+
+    /// <summary>Used to dismiss popups when the user clicks the overlay chrome (not for clicks inside floating popups).</summary>
+    public bool HasDismissiblePopupOpen =>
+        IsSettingsOpen || IsGroupSettingsOpen || (_groupPopup?.IsOpen == true);
+
+    public bool IsScreenPointInsideGeneratedPopup(Point screenPoint)
+    {
+        if (_groupPopup is not { IsOpen: true, Child: FrameworkElement child })
+            return false;
+
+        if (!child.IsVisible || child.ActualWidth <= 0 || child.ActualHeight <= 0)
+            return false;
+
+        try
+        {
+            var topLeft = child.PointToScreen(new Point(0, 0));
+            return new Rect(topLeft, new Size(child.ActualWidth, child.ActualHeight)).Contains(screenPoint);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     public void Start()
@@ -1132,21 +1171,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         DateTime hoverStartUtc = default;
         IntPtr hoveredHwnd = IntPtr.Zero;
 
-        void ActivatePickerItem(AppWindowItem item)
-        {
-            WindowActivator.FocusWindow(item.Hwnd);
-            ClearAttentionForHwnd(item.Hwnd);
-            if (_groupPopup is not null)
-                _groupPopup.IsOpen = false;
-        }
-
-        void ClosePickerItem(AppWindowItem item)
-        {
-            WindowActivator.CloseWindow(item.Hwnd);
-            ClearAttentionForHwnd(item.Hwnd);
-            if (_groupPopup is not null)
-                _groupPopup.IsOpen = false;
-        }
+        var appKeysForPicker = windows
+            .Select(AppIdentity.GetAppKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var list = new System.Windows.Controls.ListBox
         {
@@ -1156,7 +1183,59 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             MaxHeight = 300,
             FontSize = SystemFonts.MessageFontSize * InstancePickerScale,
             AllowDrop = true,
+            Background = Brushes.White,
         };
+
+        void ActivatePickerItem(AppWindowItem item)
+        {
+            WindowActivator.FocusWindow(item.Hwnd);
+            ClearAttentionForHwnd(item.Hwnd);
+            if (_groupPopup is not null)
+                _groupPopup.IsOpen = false;
+        }
+
+        void RefreshPickerListAfterClose(IntPtr excludedHwnd)
+        {
+            if (_groupPopup is null || !_groupPopup.IsOpen || _window is null)
+                return;
+
+            var live = ApplyContextFilters(_windowEnumerator.GetOpenAppWindows());
+            var refreshed = live
+                .Where(w => appKeysForPicker.Contains(AppIdentity.GetAppKey(w)) && w.Hwnd != excludedHwnd)
+                .OrderByDescending(x => x.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (refreshed.Count == 0)
+            {
+                _groupPopup.IsOpen = false;
+                return;
+            }
+
+            if (refreshed.Count == 1)
+            {
+                _groupPopup.IsOpen = false;
+                WindowActivator.ActivateOrMinimizeIfForeground(refreshed[0].Hwnd);
+                return;
+            }
+
+            list.ItemsSource = refreshed;
+            list.SelectedItem = null;
+        }
+
+        void ClosePickerItem(AppWindowItem item)
+        {
+            var h = item.Hwnd;
+            WindowActivator.CloseWindow(h);
+            ClearAttentionForHwnd(h);
+            if (_window is null)
+                return;
+
+            // Keep the picker open; refresh list on next dispatcher pass (WM_CLOSE is asynchronous).
+            _window.Dispatcher.BeginInvoke(
+                () => RefreshPickerListAfterClose(h),
+                DispatcherPriority.Background);
+        }
+
         list.PreviewDragEnter += (_, _) => NotifyExternalDragOver();
         list.PreviewDragOver += (_, e) =>
         {
@@ -1234,19 +1313,24 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                 ActivatePickerItem(item);
         };
 
+        var pickerFrame = new System.Windows.Controls.Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xB0, 0xB0, 0xB0)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(2),
+            Child = list,
+        };
+        pickerFrame.BorderBrush.Freeze();
+
         _groupPopup = new Popup
         {
             PlacementTarget = placementTarget,
             Placement = PlacementMode.Top,
             VerticalOffset = 6,
             StaysOpen = false,
-            Child = new System.Windows.Controls.Border
-            {
-                Background = Brushes.Black,
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(8),
-                Child = list,
-            },
+            Child = pickerFrame,
         };
 
         hoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
@@ -1577,8 +1661,16 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (TryParseColor(EditingGroup.Color, out var c))
             dlg.Color = System.Drawing.Color.FromArgb(c.A, c.R, c.G, c.B);
 
-        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
-            return;
+        _suppressClosePopupsOnDeactivate++;
+        try
+        {
+            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                return;
+        }
+        finally
+        {
+            _suppressClosePopupsOnDeactivate--;
+        }
 
         var wpf = System.Windows.Media.Color.FromArgb(dlg.Color.A, dlg.Color.R, dlg.Color.G, dlg.Color.B);
         EditingGroup.Color = wpf.ToString();

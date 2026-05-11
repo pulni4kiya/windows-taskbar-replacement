@@ -26,6 +26,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
     private string _taskbarColorText;
     private string _flashColorText;
     private string _stripAccentColorText;
+    private string _instanceCountBadgeColorText;
 
     private const double DefaultGroupSpacingPx = 8;
 
@@ -57,6 +58,10 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
         _stripAccentColorText = string.IsNullOrWhiteSpace(_settings.Layout.StripAccentColor)
             ? "#FF000000"
             : _settings.Layout.StripAccentColor;
+
+        _instanceCountBadgeColorText = string.IsNullOrWhiteSpace(_settings.Layout.InstanceCountBadgeColor)
+            ? "#FFFFFFFF"
+            : _settings.Layout.InstanceCountBadgeColor;
 
         _persistDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -296,6 +301,59 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowInstanceCountBadge
+    {
+        get => _settings.Layout.ShowInstanceCountBadge;
+        set
+        {
+            if (_settings.Layout.ShowInstanceCountBadge == value) return;
+            _settings.Layout.ShowInstanceCountBadge = value;
+            OnPropertyChanged();
+            PersistLayoutDebounced();
+        }
+    }
+
+    public double InstanceCountBadgeFontSize
+    {
+        get => GetClampedInstanceCountBadgeFontSize(_settings.Layout.InstanceCountBadgeFontSize);
+        set
+        {
+            var v = GetClampedInstanceCountBadgeFontSize(value);
+            if (Math.Abs(_settings.Layout.InstanceCountBadgeFontSize - v) < 0.0001) return;
+            _settings.Layout.InstanceCountBadgeFontSize = v;
+            OnPropertyChanged();
+            PersistLayoutDebounced();
+        }
+    }
+
+    public string InstanceCountBadgeColorText
+    {
+        get => _instanceCountBadgeColorText;
+        set
+        {
+            if (_instanceCountBadgeColorText == value) return;
+            _instanceCountBadgeColorText = value;
+            OnPropertyChanged();
+
+            if (TryParseColor(value, out _))
+            {
+                _settings.Layout.InstanceCountBadgeColor = value.Trim();
+                OnPropertyChanged(nameof(InstanceCountBadgeBrush));
+                PersistLayoutDebounced();
+            }
+        }
+    }
+
+    public Brush InstanceCountBadgeBrush
+    {
+        get
+        {
+            var brush = new SolidColorBrush(ParseColorOrDefault(_settings.Layout.InstanceCountBadgeColor));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
     public AppMode AppMode
     {
         get => _settings.AppMode;
@@ -376,6 +434,15 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             return 0.3;
         if (value < 0.05) return 0.05;
         if (value > 2.0) return 2.0;
+        return value;
+    }
+
+    private static double GetClampedInstanceCountBadgeFontSize(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return 10;
+        if (value < 6) return 6;
+        if (value > 22) return 22;
         return value;
     }
 

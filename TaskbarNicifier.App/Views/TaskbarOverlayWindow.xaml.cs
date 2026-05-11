@@ -15,6 +15,8 @@ public partial class TaskbarOverlayWindow : Window
     private HwndSource? _source;
     private uint _shellHookMsg;
     private bool _shellHookRegistered;
+    private IntPtr _mouseHook;
+    private readonly NativeMethods.LowLevelMouseProc _mouseHookProc;
     private System.ComponentModel.INotifyPropertyChanged? _vmNotify;
 
     private AppSlotViewModel? _pendingAppDragSlot;
@@ -30,6 +32,7 @@ public partial class TaskbarOverlayWindow : Window
     public TaskbarOverlayWindow()
     {
         InitializeComponent();
+        _mouseHookProc = LowLevelMouseHookProc;
 
         _dragHoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
         {
@@ -43,6 +46,7 @@ public partial class TaskbarOverlayWindow : Window
             _source?.AddHook(WndProc);
 
             TryRegisterShellHook();
+            TryInstallMouseHook();
 
             if (DataContext is TaskbarOverlayViewModel vm)
             {
@@ -60,6 +64,7 @@ public partial class TaskbarOverlayWindow : Window
             _source = null;
 
             TryDeregisterShellHook();
+            TryUninstallMouseHook();
 
             if (DataContext is TaskbarOverlayViewModel vm)
             {
@@ -69,6 +74,62 @@ public partial class TaskbarOverlayWindow : Window
 
             UnhookViewModelForModeChanges();
         };
+    }
+
+    private void RootWindow_Deactivated(object? sender, EventArgs e)
+    {
+        if (DataContext is TaskbarOverlayViewModel vm)
+            vm.CloseActivePopups();
+    }
+
+    private void RootWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not TaskbarOverlayViewModel vm || !vm.HasDismissiblePopupOpen)
+            return;
+
+        if (e.OriginalSource is not DependencyObject src)
+            return;
+
+        // Let the gear button toggle settings without PreviewMouseDown closing then Click re-opening.
+        if (IsDescendantOf(src, SettingsButton))
+            return;
+
+        // Popup input can still route here; keep controls usable while dismissing true outside clicks.
+        if (IsDescendantOf(src, SettingsPopupRoot) || IsDescendantOf(src, GroupSettingsPopupRoot))
+            return;
+
+        vm.CloseActivePopups();
+    }
+
+    private static bool IsDescendantOf(DependencyObject? node, DependencyObject? ancestor)
+    {
+        if (node is null || ancestor is null)
+            return false;
+
+        while (node is not null)
+        {
+            if (ReferenceEquals(node, ancestor))
+                return true;
+            node = GetVisualOrLogicalParent(node);
+        }
+
+        return false;
+    }
+
+    private static DependencyObject? GetVisualOrLogicalParent(DependencyObject node)
+    {
+        try
+        {
+            var visualParent = VisualTreeHelper.GetParent(node);
+            if (visualParent is not null)
+                return visualParent;
+        }
+        catch (InvalidOperationException)
+        {
+            // Non-visual content can still participate in the logical tree.
+        }
+
+        return LogicalTreeHelper.GetParent(node);
     }
 
     private void GroupSettingsPopup_OnClosed(object sender, EventArgs e)
@@ -395,6 +456,46 @@ public partial class TaskbarOverlayWindow : Window
         return IntPtr.Zero;
     }
 
+    private IntPtr LowLevelMouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0
+            && DataContext is TaskbarOverlayViewModel { HasDismissiblePopupOpen: true } vm
+            && IsMouseButtonDownMessage(wParam.ToInt32()))
+        {
+            var info = System.Runtime.InteropServices.Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+            var p = new Point(info.pt.X, info.pt.Y);
+            var insideOverlay = IsScreenPointInside(this, p);
+            var insideSettingsPopup = IsScreenPointInside(SettingsPopupRoot, p);
+            var insideGroupSettingsPopup = IsScreenPointInside(GroupSettingsPopupRoot, p);
+            var insideGeneratedPopup = vm.IsScreenPointInsideGeneratedPopup(p);
+
+            if (!insideOverlay && !insideSettingsPopup && !insideGroupSettingsPopup && !insideGeneratedPopup)
+                vm.CloseActivePopups();
+        }
+
+        return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+    }
+
+    private static bool IsMouseButtonDownMessage(int msg)
+        => msg is NativeMethods.WM_LBUTTONDOWN or NativeMethods.WM_RBUTTONDOWN or NativeMethods.WM_MBUTTONDOWN;
+
+    private static bool IsScreenPointInside(FrameworkElement element, Point screenPoint)
+    {
+        if (!element.IsVisible || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+            return false;
+
+        try
+        {
+            var topLeft = element.PointToScreen(new Point(0, 0));
+            var bounds = new Rect(topLeft, new Size(element.ActualWidth, element.ActualHeight));
+            return bounds.Contains(screenPoint);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     private void TryRegisterShellHook()
     {
         if (_shellHookRegistered)
@@ -408,6 +509,23 @@ public partial class TaskbarOverlayWindow : Window
             return;
 
         _shellHookRegistered = NativeMethods.RegisterShellHookWindow(_source.Handle);
+    }
+
+    private void TryInstallMouseHook()
+    {
+        if (_mouseHook != IntPtr.Zero)
+            return;
+
+        _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, _mouseHookProc, IntPtr.Zero, 0);
+    }
+
+    private void TryUninstallMouseHook()
+    {
+        if (_mouseHook == IntPtr.Zero)
+            return;
+
+        NativeMethods.UnhookWindowsHookEx(_mouseHook);
+        _mouseHook = IntPtr.Zero;
     }
 
     private void TryDeregisterShellHook()

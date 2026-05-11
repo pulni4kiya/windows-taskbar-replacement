@@ -68,6 +68,23 @@ public sealed class OverlaySettingsService
 
         if (string.IsNullOrWhiteSpace(s.Layout.StripAccentColor))
             s.Layout.StripAccentColor = "#FF000000";
+
+        if (s.Layout.LayoutSchemaVersion < 1)
+        {
+            // Older JSON omitted instance-badge fields; bool deserialized as false — default badge on.
+            s.Layout.ShowInstanceCountBadge = true;
+            s.Layout.LayoutSchemaVersion = 1;
+        }
+
+        if (double.IsNaN(s.Layout.InstanceCountBadgeFontSize) || double.IsInfinity(s.Layout.InstanceCountBadgeFontSize) || s.Layout.InstanceCountBadgeFontSize <= 0)
+            s.Layout.InstanceCountBadgeFontSize = 10;
+        else if (s.Layout.InstanceCountBadgeFontSize < 6)
+            s.Layout.InstanceCountBadgeFontSize = 6;
+        else if (s.Layout.InstanceCountBadgeFontSize > 22)
+            s.Layout.InstanceCountBadgeFontSize = 22;
+
+        if (string.IsNullOrWhiteSpace(s.Layout.InstanceCountBadgeColor))
+            s.Layout.InstanceCountBadgeColor = "#FFFFFFFF";
     }
 
     private static bool HasAnyIntegratedBounds(IntegratedOverlaySettings s)

@@ -19,6 +19,8 @@
         ResizeMode="CanResize"
         Background="Transparent"
         AllowsTransparency="True"
+        Deactivated="RootWindow_Deactivated"
+        PreviewMouseDown="RootWindow_PreviewMouseDown"
         PreviewMouseMove="RootWindow_PreviewMouseMove"
         PreviewMouseLeftButtonUp="RootWindow_PreviewMouseLeftButtonUp">
     <Window.Resources>
@@ -336,6 +338,35 @@
                                                     </Image.Height>
                                                 </Image>
                                             </Border>
+                                            <Border Panel.ZIndex="2"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Bottom"
+                                                    Margin="0,0,2,2"
+                                                    Padding="3,0,3,1"
+                                                    CornerRadius="8"
+                                                    Background="#99000000"
+                                                    IsHitTestVisible="False">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding DataContext.Shared.ShowInstanceCountBadge, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               Value="True" />
+                                                                    <Condition Binding="{Binding HasMultipleInstances}"
+                                                                               Value="True" />
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding Windows.Count}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="{Binding DataContext.Shared.InstanceCountBadgeFontSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           Foreground="{Binding DataContext.Shared.InstanceCountBadgeBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            </Border>
                                         </Grid>
                                     </Button>
                                     </Grid>
@@ -595,6 +626,35 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+                                <Border Panel.ZIndex="2"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Margin="0,0,2,2"
+                                        Padding="3,0,3,1"
+                                        CornerRadius="8"
+                                        Background="#99000000"
+                                        IsHitTestVisible="False">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding DataContext.Shared.ShowInstanceCountBadge, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   Value="True" />
+                                                        <Condition Binding="{Binding HasMultipleWindowsForCollapsedBadge}"
+                                                                   Value="True" />
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding TotalOpenWindowsInGroup}"
+                                               FontWeight="SemiBold"
+                                               FontSize="{Binding DataContext.Shared.InstanceCountBadgeFontSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                               Foreground="{Binding DataContext.Shared.InstanceCountBadgeBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                </Border>
                             </Grid>
                         </Grid>
                     </Button>
@@ -680,12 +740,14 @@
                     </Border>
                 </ScrollViewer>
 
-                <Popup IsOpen="{Binding IsSettingsOpen}"
+                <Popup x:Name="SettingsPopup"
+                       IsOpen="{Binding IsSettingsOpen}"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=SettingsButton}"
                        Placement="Top"
                        VerticalOffset="6">
-                    <Border Background="#FFF0F0F0"
+                    <Border x:Name="SettingsPopupRoot"
+                            Background="#FFF0F0F0"
                             BorderBrush="#FFCCCCCC"
                             BorderThickness="1"
                             CornerRadius="12"
@@ -785,6 +847,27 @@
                                     LargeChange="0.1"
                                     Value="{Binding PinnedAppOpacity, Mode=TwoWay}" />
 
+                            <CheckBox Content="Show instance count on app buttons"
+                                      Margin="0,10,0,0"
+                                      ToolTip="When an app has multiple windows, show a small count on the icon"
+                                      IsChecked="{Binding ShowInstanceCountBadge, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="{Binding InstanceCountBadgeFontSize, StringFormat=Instance badge size: {0:0}}" />
+                            <Slider Minimum="6"
+                                    Maximum="22"
+                                    SmallChange="1"
+                                    LargeChange="1"
+                                    Value="{Binding InstanceCountBadgeFontSize, Mode=TwoWay}" />
+
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="Instance badge color (hex, e.g. #FFFFFFFF)" />
+                            <TextBox Text="{Binding InstanceCountBadgeColorText, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4,0,0"
+                                     Background="#FFFFFFFF"
+                                     Foreground="#FF222222"
+                                     BorderBrush="#FFAAAAAA" />
+
                             <Button Content="New strip group"
                                     Margin="0,10,0,0"
                                     Padding="10,6"
@@ -832,7 +915,8 @@
                        PlacementTarget="{Binding ElementName=RootWindow}"
                        Placement="Center"
                        Closed="GroupSettingsPopup_OnClosed">
-                    <Border Background="#FFF8F8F8"
+                    <Border x:Name="GroupSettingsPopupRoot"
+                            Background="#FFF8F8F8"
                             BorderBrush="#FFCCCCCC"
                             BorderThickness="1"
                             CornerRadius="12"

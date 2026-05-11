@@ -49,6 +49,9 @@ public sealed class AppSlotViewModel
     public bool CanPinOrUnpin { get; }
     public PinnedAppSettings? PinnedSettings { get; }
 
+    /// <summary>True when more than one window is grouped into this slot (instance picker case).</summary>
+    public bool HasMultipleInstances => Windows.Count > 1;
+
     public string TooltipHeader
     {
         get

@@ -47,6 +47,12 @@ public sealed class UserGroupViewModel
         !IsHiddenGroup &&
         Slots.FirstOrDefault() is { IsRunning: false, IsPinned: true };
 
+    /// <summary>Total open windows across slots in this group (for collapsed single-item badge).</summary>
+    public int TotalOpenWindowsInGroup => Slots.Sum(s => s.Windows.Count);
+
+    /// <summary>True when the collapsed chip should show an instance count (multiple windows in the group).</summary>
+    public bool HasMultipleWindowsForCollapsedBadge => TotalOpenWindowsInGroup > 1;
+
     private static ImageSource CreateHiddenGroupIcon()
     {
         var white = new SolidColorBrush(System.Windows.Media.Color.FromArgb(220, 255, 255, 255));
