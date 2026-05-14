@@ -221,6 +221,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             if (_taskbarColorText == value) return;
             _taskbarColorText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(TaskbarColor));
 
             if (TryParseColor(value, out _))
             {
@@ -229,6 +230,16 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
                 _refreshAllOverlays();
                 PersistLayoutDebounced();
             }
+        }
+    }
+
+    public Color? TaskbarColor
+    {
+        get => TryParseColor(_taskbarColorText, out var c) ? c : null;
+        set
+        {
+            if (value is null) return;
+            TaskbarColorText = value.Value.ToString();
         }
     }
 
@@ -250,6 +261,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             if (_flashColorText == value) return;
             _flashColorText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(FlashColor));
 
             if (TryParseColor(value, out _))
             {
@@ -258,6 +270,16 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
                 _refreshAllOverlays();
                 PersistLayoutDebounced();
             }
+        }
+    }
+
+    public Color? FlashColor
+    {
+        get => TryParseColor(_flashColorText, out var c) ? c : null;
+        set
+        {
+            if (value is null) return;
+            FlashColorText = value.Value.ToString();
         }
     }
 
@@ -280,6 +302,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             if (_stripAccentColorText == value) return;
             _stripAccentColorText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StripAccentColor));
 
             if (TryParseColor(value, out _))
             {
@@ -288,6 +311,16 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
                 _refreshAllOverlays();
                 PersistLayoutDebounced();
             }
+        }
+    }
+
+    public Color? StripAccentColor
+    {
+        get => TryParseColor(_stripAccentColorText, out var c) ? c : null;
+        set
+        {
+            if (value is null) return;
+            StripAccentColorText = value.Value.ToString();
         }
     }
 
@@ -334,6 +367,7 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
             if (_instanceCountBadgeColorText == value) return;
             _instanceCountBadgeColorText = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(InstanceCountBadgeColor));
 
             if (TryParseColor(value, out _))
             {
@@ -341,6 +375,16 @@ public sealed class OverlaySharedSettingsViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(InstanceCountBadgeBrush));
                 PersistLayoutDebounced();
             }
+        }
+    }
+
+    public Color? InstanceCountBadgeColor
+    {
+        get => TryParseColor(_instanceCountBadgeColorText, out var c) ? c : null;
+        set
+        {
+            if (value is null) return;
+            InstanceCountBadgeColorText = value.Value.ToString();
         }
     }
 

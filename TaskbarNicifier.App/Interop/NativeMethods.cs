@@ -127,6 +127,9 @@ internal static class NativeMethods
     internal static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    internal static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
     internal static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
     [DllImport("user32.dll")]

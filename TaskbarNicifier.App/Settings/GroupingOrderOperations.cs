@@ -181,4 +181,34 @@ public static class GroupingOrderOperations
         MoveGroupBefore(g, groupId, beforeId2);
         GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
     }
+
+    /// <summary>Deletes a user group, moving its app keys into the default group.</summary>
+    public static void DeleteGroup(GroupingSettings g, string groupId)
+    {
+        if (string.Equals(groupId, g.HiddenGroupId, StringComparison.Ordinal))
+            return;
+        if (string.Equals(groupId, g.DefaultGroupId, StringComparison.Ordinal))
+            return;
+
+        var group = g.Groups.FirstOrDefault(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        if (group is null)
+            return;
+
+        var defaultGroup = GroupingSettingsBootstrap.FindGroup(g, g.DefaultGroupId);
+        if (defaultGroup is null)
+            return;
+
+        foreach (var key in group.OrderedAppKeys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+            if (defaultGroup.OrderedAppKeys.Any(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            defaultGroup.OrderedAppKeys.Add(key);
+        }
+
+        g.Groups.RemoveAll(x => string.Equals(x.Id, groupId, StringComparison.Ordinal));
+        DeduplicateKeysAcrossGroups(g);
+        GroupingSettingsBootstrap.NormalizeGroupAlignments(g);
+    }
 }

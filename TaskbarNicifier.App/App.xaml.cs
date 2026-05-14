@@ -18,4 +18,3 @@ public partial class App : System.Windows.Application
         _windowManager.ReconcileWindows();
     }
 }
-

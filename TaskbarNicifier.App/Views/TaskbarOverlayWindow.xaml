@@ -8,6 +8,7 @@
         xmlns:vm="clr-namespace:TaskbarNicifier.App.ViewModels"
         xmlns:settings="clr-namespace:TaskbarNicifier.App.Settings"
         xmlns:conv="clr-namespace:TaskbarNicifier.App.Views.Converters"
+        xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
         mc:Ignorable="d"
         Title="Taskbar Nicifier"
         Height="80"
@@ -137,6 +138,20 @@
                         <MenuItem Header="Group settings…"
                                   Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
                                   CommandParameter="{Binding Settings.Id}" />
+                        <MenuItem Header="Delete group"
+                                  Command="{Binding DataContext.DeleteGroupCommand, Source={x:Reference RootWindow}}"
+                                  CommandParameter="{Binding}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanDeleteGroup}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
                 <DockPanel LastChildFill="True">
@@ -287,6 +302,20 @@
                                                 <MenuItem Header="Group settings…"
                                                           Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
                                                           CommandParameter="{Binding ParentGroupId}" />
+                                                <MenuItem Header="Delete group"
+                                                          Command="{Binding DataContext.DeleteGroupCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding ParentGroupId}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanDeleteParentGroup}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
                                         <Button.ToolTip>
@@ -530,6 +559,20 @@
                                 <MenuItem Header="Group settings…"
                                           Command="{Binding DataContext.OpenGroupSettingsCommand, Source={x:Reference RootWindow}}"
                                           CommandParameter="{Binding Settings.Id}" />
+                                <MenuItem Header="Delete group"
+                                          Command="{Binding DataContext.DeleteGroupCommand, Source={x:Reference RootWindow}}"
+                                          CommandParameter="{Binding}">
+                                    <MenuItem.Style>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanDeleteGroup}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </MenuItem.Style>
+                                </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
                         <Button.ToolTip>
@@ -727,6 +770,16 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                             </ItemsControl>
+                            <Border Grid.Column="1"
+                                    Background="Transparent"
+                                    VerticalAlignment="Stretch">
+                                <Border.ContextMenu>
+                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="Create group"
+                                                  Command="{Binding CreateGroupCommand}" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
+                            </Border>
                             <ItemsControl Grid.Column="2"
                                           HorizontalAlignment="Right"
                                           ItemsSource="{Binding RightStripGroups}">
@@ -742,7 +795,7 @@
 
                 <Popup x:Name="SettingsPopup"
                        IsOpen="{Binding IsSettingsOpen}"
-                       StaysOpen="False"
+                       StaysOpen="True"
                        PlacementTarget="{Binding ElementName=SettingsButton}"
                        Placement="Top"
                        VerticalOffset="6">
@@ -861,12 +914,9 @@
                                     Value="{Binding InstanceCountBadgeFontSize, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,8,0,0"
-                                       Text="Instance badge color (hex, e.g. #FFFFFFFF)" />
-                            <TextBox Text="{Binding InstanceCountBadgeColorText, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,0,0"
-                                     Background="#FFFFFFFF"
-                                     Foreground="#FF222222"
-                                     BorderBrush="#FFAAAAAA" />
+                                       Text="Instance badge color" />
+                            <xctk:ColorPicker Margin="0,4,0,0"
+                                              SelectedColor="{Binding InstanceCountBadgeColor, Mode=TwoWay}" />
 
                             <Button Content="New strip group"
                                     Margin="0,10,0,0"
@@ -876,28 +926,19 @@
                                     ToolTip="Adds a new empty group (before Hidden). Drag apps into it." />
 
                             <TextBlock Margin="0,10,0,0"
-                                       Text="Taskbar color (hex, e.g. #FF202020)" />
-                            <TextBox Text="{Binding TaskbarColorText, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,0,0"
-                                     Background="#FFFFFFFF"
-                                     Foreground="#FF222222"
-                                     BorderBrush="#FFAAAAAA" />
+                                       Text="Taskbar color" />
+                            <xctk:ColorPicker Margin="0,4,0,0"
+                                              SelectedColor="{Binding TaskbarColor, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,10,0,0"
-                                       Text="Flash color (hex, e.g. #99FFFFFF)" />
-                            <TextBox Text="{Binding FlashColorText, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,0,0"
-                                     Background="#FFFFFFFF"
-                                     Foreground="#FF222222"
-                                     BorderBrush="#FFAAAAAA" />
+                                       Text="Flash color" />
+                            <xctk:ColorPicker Margin="0,4,0,0"
+                                              SelectedColor="{Binding FlashColor, Mode=TwoWay}" />
 
                             <TextBlock Margin="0,10,0,0"
-                                       Text="Strip accent (hex, e.g. #FF000000) — drag line and empty-group name" />
-                            <TextBox Text="{Binding StripAccentColorText, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,0,0"
-                                     Background="#FFFFFFFF"
-                                     Foreground="#FF222222"
-                                     BorderBrush="#FFAAAAAA" />
+                                       Text="Strip accent — drag line and empty-group name" />
+                            <xctk:ColorPicker Margin="0,4,0,0"
+                                              SelectedColor="{Binding StripAccentColor, Mode=TwoWay}" />
 
                             <Button Content="Exit"
                                     Margin="0,14,0,0"
@@ -911,7 +952,7 @@
 
                 <Popup x:Name="GroupSettingsPopup"
                        IsOpen="{Binding IsGroupSettingsOpen, Mode=TwoWay}"
-                       StaysOpen="False"
+                       StaysOpen="True"
                        PlacementTarget="{Binding ElementName=RootWindow}"
                        Placement="Center"
                        Closed="GroupSettingsPopup_OnClosed">
@@ -935,18 +976,9 @@
                                      Foreground="#FF222222"
                                      BorderBrush="#FFAAAAAA" />
 
-                            <TextBlock Text="Background color (hex)" />
-                            <DockPanel Margin="0,4,0,8">
-                                <Button DockPanel.Dock="Right"
-                                        Content="Pick…"
-                                        Padding="10,4"
-                                        Margin="8,0,0,0"
-                                        Command="{Binding PickEditingGroupColorCommand}" />
-                                <TextBox Text="{Binding EditingGroupColorText, UpdateSourceTrigger=PropertyChanged}"
-                                         Background="#FFFFFFFF"
-                                         Foreground="#FF222222"
-                                         BorderBrush="#FFAAAAAA" />
-                            </DockPanel>
+                            <TextBlock Text="Background color" />
+                            <xctk:ColorPicker Margin="0,4,0,8"
+                                              SelectedColor="{Binding EditingGroupColor, Mode=TwoWay}" />
                             <Border Height="28"
                                     Margin="0,0,0,8"
                                     CornerRadius="4"

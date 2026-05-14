@@ -55,6 +55,7 @@ public partial class TaskbarOverlayWindow : Window
             }
 
             HookViewModelForModeChanges();
+            HookViewModelForSettingsPopupFocus();
             ApplyExtendedWindowStyles();
         };
 
@@ -73,6 +74,7 @@ public partial class TaskbarOverlayWindow : Window
             }
 
             UnhookViewModelForModeChanges();
+            UnhookViewModelForSettingsPopupFocus();
         };
     }
 
@@ -446,7 +448,9 @@ public partial class TaskbarOverlayWindow : Window
 
         if (msg == NativeMethods.WM_MOUSEACTIVATE)
         {
-            if (DataContext is TaskbarOverlayViewModel vm && vm.Mode == OverlayMode.Integrated)
+            if (DataContext is TaskbarOverlayViewModel vm
+                && vm.Mode == OverlayMode.Integrated
+                && !vm.SettingsPopupsNeedFocus)
             {
                 handled = true;
                 return new IntPtr(NativeMethods.MA_NOACTIVATE);
@@ -468,8 +472,13 @@ public partial class TaskbarOverlayWindow : Window
             var insideSettingsPopup = IsScreenPointInside(SettingsPopupRoot, p);
             var insideGroupSettingsPopup = IsScreenPointInside(GroupSettingsPopupRoot, p);
             var insideGeneratedPopup = vm.IsScreenPointInsideGeneratedPopup(p);
+            var insideCurrentProcessPopup = IsScreenPointInsideCurrentProcessWindow(p);
 
-            if (!insideOverlay && !insideSettingsPopup && !insideGroupSettingsPopup && !insideGeneratedPopup)
+            if (!insideOverlay
+                && !insideSettingsPopup
+                && !insideGroupSettingsPopup
+                && !insideGeneratedPopup
+                && !insideCurrentProcessPopup)
                 vm.CloseActivePopups();
         }
 
@@ -494,6 +503,20 @@ public partial class TaskbarOverlayWindow : Window
         {
             return false;
         }
+    }
+
+    private static bool IsScreenPointInsideCurrentProcessWindow(Point screenPoint)
+    {
+        var hwnd = NativeMethods.WindowFromPoint(new NativeMethods.POINT
+        {
+            X = (int)Math.Round(screenPoint.X),
+            Y = (int)Math.Round(screenPoint.Y),
+        });
+        if (hwnd == IntPtr.Zero)
+            return false;
+
+        _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+        return processId == Environment.ProcessId;
     }
 
     private void TryRegisterShellHook()
@@ -580,7 +603,12 @@ public partial class TaskbarOverlayWindow : Window
         ex &= ~NativeMethods.WS_EX_APPWINDOW;
 
         if (DataContext is TaskbarOverlayViewModel vm && vm.Mode == OverlayMode.Integrated)
-            ex |= NativeMethods.WS_EX_NOACTIVATE;
+        {
+            if (!vm.SettingsPopupsNeedFocus)
+                ex |= NativeMethods.WS_EX_NOACTIVATE;
+            else
+                ex &= ~NativeMethods.WS_EX_NOACTIVATE;
+        }
         else
             ex &= ~NativeMethods.WS_EX_NOACTIVATE;
 
@@ -609,5 +637,37 @@ public partial class TaskbarOverlayWindow : Window
     {
         if (e.PropertyName == nameof(TaskbarOverlayViewModel.Mode))
             ApplyExtendedWindowStyles();
+    }
+
+    private void HookViewModelForSettingsPopupFocus()
+    {
+        UnhookViewModelForSettingsPopupFocus();
+
+        if (DataContext is TaskbarOverlayViewModel vm)
+            vm.SettingsPopupFocusChanged += OnSettingsPopupFocusChanged;
+    }
+
+    private void UnhookViewModelForSettingsPopupFocus()
+    {
+        if (DataContext is TaskbarOverlayViewModel vm)
+            vm.SettingsPopupFocusChanged -= OnSettingsPopupFocusChanged;
+    }
+
+    private void OnSettingsPopupFocusChanged(object? sender, EventArgs e)
+    {
+        ApplyExtendedWindowStyles();
+
+        if (DataContext is TaskbarOverlayViewModel { SettingsPopupsNeedFocus: true })
+        {
+            try
+            {
+                Activate();
+                Focus();
+            }
+            catch (InvalidOperationException)
+            {
+                // Ignore if activation can't start.
+            }
+        }
     }
 }

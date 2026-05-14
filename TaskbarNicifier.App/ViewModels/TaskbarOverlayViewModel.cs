@@ -41,7 +41,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     private Window? _window;
     private Popup? _groupPopup;
-    private int _suppressClosePopupsOnDeactivate;
 
     private const int IntegratedReserveLeftPx = 220;
     private const int IntegratedReserveRightPx = 360;
@@ -89,7 +88,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand UnhideGroupCommand { get; }
     public RelayCommand OpenGroupSettingsCommand { get; }
     public RelayCommand CloseGroupSettingsCommand { get; }
-    public RelayCommand PickEditingGroupColorCommand { get; }
+    public RelayCommand DeleteGroupCommand { get; }
+    public RelayCommand CreateGroupCommand { get; }
     public RelayCommand MoveGroupLeftCommand { get; }
     public RelayCommand MoveGroupRightCommand { get; }
     public RelayCommand PinAppCommand { get; }
@@ -206,7 +206,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         UnhideGroupCommand = new RelayCommand(p => UnhideGroup(p));
         OpenGroupSettingsCommand = new RelayCommand(p => OpenGroupSettings(p));
         CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
-        PickEditingGroupColorCommand = new RelayCommand(_ => PickEditingGroupColor());
+        DeleteGroupCommand = new RelayCommand(p => DeleteGroup(p));
+        CreateGroupCommand = new RelayCommand(_ => _shared.AddUserStripGroupCommand.Execute(null));
         MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
         PinAppCommand = new RelayCommand(p => PinApp(p));
@@ -338,6 +339,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             if (_isSettingsOpen == value) return;
             _isSettingsOpen = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(SettingsPopupsNeedFocus));
+            NotifySettingsPopupFocusChanged();
         }
     }
 
@@ -350,8 +353,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             if (_isGroupSettingsOpen == value) return;
             _isGroupSettingsOpen = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(SettingsPopupsNeedFocus));
+            NotifySettingsPopupFocusChanged();
         }
     }
+
+    /// <summary>True while settings or group-settings popups are open and need keyboard focus.</summary>
+    public bool SettingsPopupsNeedFocus => IsSettingsOpen || IsGroupSettingsOpen;
 
     private UserTaskbarGroupSettings? _editingGroup;
     public UserTaskbarGroupSettings? EditingGroup
@@ -364,6 +372,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(EditingGroupDisplayName));
             OnPropertyChanged(nameof(EditingGroupColorText));
+            OnPropertyChanged(nameof(EditingGroupColor));
             OnPropertyChanged(nameof(EditingGroupDisplayType));
         }
     }
@@ -389,7 +398,18 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             if (EditingGroup.Color == value) return;
             EditingGroup.Color = value.Trim();
             OnPropertyChanged();
+            OnPropertyChanged(nameof(EditingGroupColor));
             OnPropertyChanged(nameof(EditingGroupBrushPreview));
+        }
+    }
+
+    public Color? EditingGroupColor
+    {
+        get => TryParseColor(EditingGroup?.Color ?? "#40000000", out var c) ? c : null;
+        set
+        {
+            if (value is null) return;
+            EditingGroupColorText = value.Value.ToString();
         }
     }
 
@@ -435,6 +455,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
     public IEnumerable<GroupDisplayType> AllGroupDisplayTypes { get; } =
         Enum.GetValues<GroupDisplayType>();
+
+    public event EventHandler? SettingsPopupFocusChanged;
+
+    private void NotifySettingsPopupFocusChanged()
+        => SettingsPopupFocusChanged?.Invoke(this, EventArgs.Empty);
 
     private void ToggleSettingsPopup()
     {
@@ -519,9 +544,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     /// <summary>Closes settings, group settings, and the instance picker. Skipped while a modal dialog may deactivate the overlay.</summary>
     public void CloseActivePopups()
     {
-        if (_suppressClosePopupsOnDeactivate > 0)
-            return;
-
         if (_groupPopup?.IsOpen == true)
             _groupPopup.IsOpen = false;
 
@@ -741,6 +763,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
                     var canPinOrUnpin = !string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
 
+                    var canDeleteParentGroup = !string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal) &&
+                                               !string.Equals(ug.Id, gs.DefaultGroupId, StringComparison.Ordinal);
+
                     slots.Add(new AppSlotViewModel(
                         appKey: key,
                         displayName: displayName,
@@ -749,6 +774,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         parentGroupId: ug.Id,
                         canMoveGroupLeft: canMoveGroupLeft,
                         canMoveGroupRight: canMoveGroupRight,
+                        canDeleteParentGroup: canDeleteParentGroup,
                         isFlashing: isFlashing,
                         isPinned: isPinned,
                         isRunning: wins.Count > 0,
@@ -783,7 +809,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     CreateGroupBackgroundBrush(ug.Color),
                     isHiddenGroup,
                     canMoveLeft: canMoveLeft,
-                    canMoveRight: canMoveRight));
+                    canMoveRight: canMoveRight,
+                    canDeleteGroup: !isHiddenGroup &&
+                                    !string.Equals(ug.Id, gs.DefaultGroupId, StringComparison.Ordinal)));
             }
         }
 
@@ -1627,6 +1655,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         IsGroupSettingsOpen = true;
         OnPropertyChanged(nameof(EditingGroupDisplayName));
         OnPropertyChanged(nameof(EditingGroupColorText));
+        OnPropertyChanged(nameof(EditingGroupColor));
         OnPropertyChanged(nameof(EditingGroupDisplayType));
         OnPropertyChanged(nameof(EditingGroupBrushPreview));
     }
@@ -1647,35 +1676,26 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         EditingGroup = null;
         OnPropertyChanged(nameof(EditingGroupDisplayName));
         OnPropertyChanged(nameof(EditingGroupColorText));
+        OnPropertyChanged(nameof(EditingGroupColor));
         OnPropertyChanged(nameof(EditingGroupDisplayType));
         OnPropertyChanged(nameof(EditingGroupBrushPreview));
         BumpGroupingAndRebuild();
     }
 
-    private void PickEditingGroupColor()
+    private void DeleteGroup(object? parameter)
     {
-        if (EditingGroup is null)
+        var groupId = ResolveGroupIdForReorder(parameter);
+        if (groupId is null)
             return;
 
-        using var dlg = new System.Windows.Forms.ColorDialog();
-        if (TryParseColor(EditingGroup.Color, out var c))
-            dlg.Color = System.Drawing.Color.FromArgb(c.A, c.R, c.G, c.B);
+        var gs = _settings.Grouping;
+        if (string.Equals(groupId, gs.HiddenGroupId, StringComparison.Ordinal))
+            return;
+        if (string.Equals(groupId, gs.DefaultGroupId, StringComparison.Ordinal))
+            return;
 
-        _suppressClosePopupsOnDeactivate++;
-        try
-        {
-            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
-                return;
-        }
-        finally
-        {
-            _suppressClosePopupsOnDeactivate--;
-        }
-
-        var wpf = System.Windows.Media.Color.FromArgb(dlg.Color.A, dlg.Color.R, dlg.Color.G, dlg.Color.B);
-        EditingGroup.Color = wpf.ToString();
-        OnPropertyChanged(nameof(EditingGroupColorText));
-        OnPropertyChanged(nameof(EditingGroupBrushPreview));
+        GroupingOrderOperations.DeleteGroup(gs, groupId);
+        BumpGroupingAndRebuild();
     }
 
     public void BumpGroupingAndRebuild()

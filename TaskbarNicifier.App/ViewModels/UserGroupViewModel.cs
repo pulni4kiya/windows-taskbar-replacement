@@ -23,7 +23,8 @@ public sealed class UserGroupViewModel
         Brush groupBackground,
         bool isHiddenGroup,
         bool canMoveLeft,
-        bool canMoveRight)
+        bool canMoveRight,
+        bool canDeleteGroup)
     {
         Settings = settings;
         Slots = slots;
@@ -31,6 +32,7 @@ public sealed class UserGroupViewModel
         IsHiddenGroup = isHiddenGroup;
         CanMoveLeft = canMoveLeft;
         CanMoveRight = canMoveRight;
+        CanDeleteGroup = canDeleteGroup;
     }
 
     public UserTaskbarGroupSettings Settings { get; }
@@ -39,6 +41,7 @@ public sealed class UserGroupViewModel
     public bool IsHiddenGroup { get; }
     public bool CanMoveLeft { get; }
     public bool CanMoveRight { get; }
+    public bool CanDeleteGroup { get; }
     public bool IsSingleItemDisplay => IsHiddenGroup || Settings.DisplayType == GroupDisplayType.SingleItem;
     public ImageSource? CollapsedIcon => IsHiddenGroup ? HiddenGroupIcon : Slots.FirstOrDefault()?.Icon;
 

@@ -16,6 +16,7 @@ public sealed class AppSlotViewModel
         string parentGroupId,
         bool canMoveGroupLeft,
         bool canMoveGroupRight,
+        bool canDeleteParentGroup,
         bool isFlashing,
         bool isPinned,
         bool isRunning,
@@ -29,6 +30,7 @@ public sealed class AppSlotViewModel
         ParentGroupId = parentGroupId;
         CanMoveGroupLeft = canMoveGroupLeft;
         CanMoveGroupRight = canMoveGroupRight;
+        CanDeleteParentGroup = canDeleteParentGroup;
         IsFlashing = isFlashing;
         IsPinned = isPinned;
         IsRunning = isRunning;
@@ -43,6 +45,7 @@ public sealed class AppSlotViewModel
     public string ParentGroupId { get; }
     public bool CanMoveGroupLeft { get; }
     public bool CanMoveGroupRight { get; }
+    public bool CanDeleteParentGroup { get; }
     public bool IsFlashing { get; }
     public bool IsPinned { get; }
     public bool IsRunning { get; }
