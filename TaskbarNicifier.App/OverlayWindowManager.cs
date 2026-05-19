@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Threading;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 using TaskbarNicifier.App.ViewModels;
@@ -22,6 +23,8 @@ internal sealed class OverlayWindowManager
     private readonly Dictionary<string, TaskbarOverlayWindow> _windowsByMonitorKey =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly DispatcherTimer _displayTopologyDebounceTimer;
+
     public OverlayWindowManager()
     {
         _settings = _settingsService.Load();
@@ -30,6 +33,16 @@ internal sealed class OverlayWindowManager
             _settingsService,
             ReconcileWindows,
             RefreshAllOverlays);
+
+        _displayTopologyDebounceTimer = new DispatcherTimer(DispatcherPriority.Normal)
+        {
+            Interval = TimeSpan.FromMilliseconds(400),
+        };
+        _displayTopologyDebounceTimer.Tick += (_, _) =>
+        {
+            _displayTopologyDebounceTimer.Stop();
+            RefreshDisplayTopology();
+        };
     }
 
     private void RegisterViewModel(TaskbarOverlayViewModel vm)
@@ -49,23 +62,23 @@ internal sealed class OverlayWindowManager
             vm.RefreshFromSharedNotification();
     }
 
-    public void ReconcileWindows()
+    public void ScheduleDisplayTopologyReconcile(int delayMs = 400)
     {
-        var targets = _placement.GetTaskbarTargets();
-        if (targets.Count == 0)
-            targets = Array.Empty<TaskbarTarget>();
+        _displayTopologyDebounceTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        _displayTopologyDebounceTimer.Stop();
+        _displayTopologyDebounceTimer.Start();
+    }
 
-        IReadOnlyList<TaskbarTarget> desired;
-        if (_settings.Layout.ShowTaskbarOnAllMonitors)
-        {
-            desired = targets;
-        }
-        else
-        {
-            desired = targets.FirstOrDefault(t => t.IsPrimary) is { } p
-                ? new[] { p }
-                : targets.Take(1).ToArray();
-        }
+    public void ReconcileWindows() => RefreshDisplayTopology();
+
+    /// <summary>
+    /// Updates monitor handles on existing overlays and creates missing ones — no window teardown.
+    /// </summary>
+    private void RefreshDisplayTopology()
+    {
+        var desired = GetDesiredTargets();
+        if (desired.Count == 0)
+            return;
 
         var desiredKeys = desired.Select(t => t.MonitorKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -74,33 +87,89 @@ internal sealed class OverlayWindowManager
             if (desiredKeys.Contains(existingKey))
                 continue;
 
-            var w = _windowsByMonitorKey[existingKey];
-            _windowsByMonitorKey.Remove(existingKey);
-            try { w.Close(); } catch { /* ignore */ }
+            CloseOverlayWindow(existingKey);
         }
 
         foreach (var t in desired)
         {
-            if (_windowsByMonitorKey.ContainsKey(t.MonitorKey))
+            if (_windowsByMonitorKey.TryGetValue(t.MonitorKey, out var existing)
+                && existing.DataContext is TaskbarOverlayViewModel vm)
+            {
+                vm.UpdateTarget(t);
+                if (existing.Visibility != Visibility.Visible)
+                    existing.Visibility = Visibility.Visible;
                 continue;
+            }
 
-            var vm = new TaskbarOverlayViewModel(
-                target: t,
-                shared: _shared,
-                registerViewModel: RegisterViewModel,
-                unregisterViewModel: UnregisterViewModel);
-            var w = new TaskbarOverlayWindow
-            {
-                DataContext = vm,
-            };
-
-            w.Closed += (_, _) =>
-            {
-                try { Application.Current?.Shutdown(); } catch { /* ignore */ }
-            };
-
-            _windowsByMonitorKey[t.MonitorKey] = w;
-            w.Show();
+            CreateAndShowOverlay(t);
         }
+
+        RefreshAllOverlays();
+    }
+
+    private IReadOnlyList<TaskbarTarget> GetDesiredTargets()
+    {
+        var targets = _placement.GetTaskbarTargets();
+        if (targets.Count == 0)
+            return Array.Empty<TaskbarTarget>();
+
+        if (_settings.Layout.ShowTaskbarOnAllMonitors)
+            return targets;
+
+        return targets.FirstOrDefault(t => t.IsPrimary) is { } p
+            ? new[] { p }
+            : targets.Take(1).ToArray();
+    }
+
+    private void CloseOverlayWindow(string monitorKey)
+    {
+        if (!_windowsByMonitorKey.TryGetValue(monitorKey, out var w))
+            return;
+
+        _windowsByMonitorKey.Remove(monitorKey);
+        w.Closed -= OnOverlayWindowClosed;
+        try
+        {
+            w.CloseFromManager();
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private void CreateAndShowOverlay(TaskbarTarget t)
+    {
+        var vm = new TaskbarOverlayViewModel(
+            target: t,
+            shared: _shared,
+            registerViewModel: RegisterViewModel,
+            unregisterViewModel: UnregisterViewModel);
+        var w = new TaskbarOverlayWindow
+        {
+            DataContext = vm,
+        };
+
+        w.Closed += OnOverlayWindowClosed;
+
+        _windowsByMonitorKey[t.MonitorKey] = w;
+        w.Show();
+    }
+
+    private void OnOverlayWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is not TaskbarOverlayWindow w)
+            return;
+
+        w.Closed -= OnOverlayWindowClosed;
+
+        var key = _windowsByMonitorKey.FirstOrDefault(kv => ReferenceEquals(kv.Value, w)).Key;
+        if (key is not null)
+            _windowsByMonitorKey.Remove(key);
+
+        if (w.IsClosingFromManager || _windowsByMonitorKey.Count > 0)
+            return;
+
+        ScheduleDisplayTopologyReconcile(delayMs: 600);
     }
 }

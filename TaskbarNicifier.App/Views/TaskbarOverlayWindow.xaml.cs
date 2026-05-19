@@ -28,6 +28,10 @@ public partial class TaskbarOverlayWindow : Window
     private AppSlotViewModel? _dragHoverSlot;
     private FrameworkElement? _dragHoverPlacementTarget;
     private bool _dragHoverTriggered;
+    private bool _closeFromManager;
+
+    /// <summary>True when the overlay manager is closing this window for reconciliation (not user exit).</summary>
+    public bool IsClosingFromManager => _closeFromManager;
 
     public TaskbarOverlayWindow()
     {
@@ -76,6 +80,20 @@ public partial class TaskbarOverlayWindow : Window
             UnhookViewModelForModeChanges();
             UnhookViewModelForSettingsPopupFocus();
         };
+    }
+
+    /// <summary>Closes this overlay without requesting application shutdown.</summary>
+    public void CloseFromManager()
+    {
+        _closeFromManager = true;
+        try
+        {
+            Close();
+        }
+        finally
+        {
+            _closeFromManager = false;
+        }
     }
 
     private void RootWindow_Deactivated(object? sender, EventArgs e)

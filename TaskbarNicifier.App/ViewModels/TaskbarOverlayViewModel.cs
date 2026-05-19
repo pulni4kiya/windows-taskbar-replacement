@@ -29,7 +29,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private readonly TaskbarPlacementService _taskbarPlacement = new();
     private readonly FullscreenDetector _fullscreenDetector = new();
     private readonly VirtualDesktopService _virtualDesktopService = new();
-    private readonly TaskbarTarget _target;
+    private TaskbarTarget _target;
     private readonly OverlaySharedSettingsViewModel _shared;
     private readonly Action<TaskbarOverlayViewModel>? _registerViewModel;
     private readonly Action<TaskbarOverlayViewModel>? _unregisterViewModel;
@@ -269,6 +269,22 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     internal void RefreshFromSharedNotification()
     {
         _lastLiveFingerprint = null;
+        Refresh();
+    }
+
+    /// <summary>Refreshes monitor/taskbar target after display topology changes without recreating the window.</summary>
+    internal void UpdateTarget(TaskbarTarget target)
+    {
+        _target = target;
+        _lastLiveFingerprint = null;
+
+        if (_window is null)
+            return;
+
+        if (_window.Visibility != Visibility.Visible)
+            _window.Visibility = Visibility.Visible;
+
+        ApplyModeWindowSettings();
         Refresh();
     }
 
