@@ -905,9 +905,9 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         reserveRight: IntegratedReserveRightPx);
 
                     _window.Left = b.X;
-                    _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(b.Y, b.Height);
                     _window.Width = b.Width;
                     _window.Height = b.Height;
+                    _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(b.Height);
                 }
             }
         }
@@ -946,6 +946,10 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (Mode != OverlayMode.Integrated)
             return;
 
+        var pinnedTop = ClampIntegratedTopToTaskbarMonitorBottom(_window.Height);
+        if (Math.Abs(_window.Top - pinnedTop) > 0.5)
+            _window.Top = pinnedTop;
+
         _persistDebounceTimer.Stop();
         _persistDebounceTimer.Start();
     }
@@ -971,24 +975,17 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return false;
 
         _window.Left = rect.Left;
-        _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(rect.Top, rect.Height);
         _window.Width = rect.Width;
         _window.Height = rect.Height;
+        _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(rect.Height);
         return true;
     }
 
-    private double ClampIntegratedTopToTaskbarMonitorBottom(double desiredTop, double height)
+    private double ClampIntegratedTopToTaskbarMonitorBottom(double height)
     {
-        if (_window is null)
-            return desiredTop;
-
         var mi = _target.MonitorInfo;
         var monitorBottom = mi.rcMonitor.Bottom;
-        var newTop = desiredTop;
-
-        var bottom = desiredTop + height;
-        if (bottom > monitorBottom)
-            newTop = monitorBottom - height;
+        var newTop = monitorBottom - height;
 
         if (newTop < mi.rcMonitor.Top)
             newTop = mi.rcMonitor.Top;
