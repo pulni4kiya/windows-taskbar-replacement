@@ -22,6 +22,7 @@ internal static class NativeMethods
     internal const int HSHELL_RUDEAPPACTIVATED = 0x8004;
 
     internal const uint GA_ROOTOWNER = 3;
+    internal const uint GW_OWNER = 4;
 
     internal const int SW_RESTORE = 9;
     internal const int SW_SHOW = 5;

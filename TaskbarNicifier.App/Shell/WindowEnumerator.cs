@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using TaskbarNicifier.App.Interop;
 
@@ -24,10 +25,6 @@ public sealed class WindowEnumerator
                     return true;
 
                 if (!NativeMethods.IsWindowVisible(hwnd))
-                    return true;
-
-                var title = GetWindowTitle(hwnd);
-                if (string.IsNullOrWhiteSpace(title))
                     return true;
 
                 if (IsToolWindow(hwnd))
@@ -55,6 +52,15 @@ public sealed class WindowEnumerator
                 catch
                 {
                     // Ignore processes we can't open.
+                }
+
+                var title = GetWindowTitle(hwnd);
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    if (!ShouldIncludeUntitledWindow(hwnd))
+                        return true;
+
+                    title = BuildFallbackTitle(processName, processPath);
                 }
 
                 // AUMID isn't always present on the top-level frame HWND (notably ApplicationFrameHost).
@@ -128,7 +134,6 @@ public sealed class WindowEnumerator
 
         if (hostedIdentityPids.Count > 0)
         {
-            var before = results.Count;
             results = results
                 .Where(w =>
                     string.Equals(w.ProcessName, "ApplicationFrameHost", StringComparison.OrdinalIgnoreCase) ||
@@ -234,6 +239,30 @@ public sealed class WindowEnumerator
             return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Mirrors shell taskbar rules for visible top-level windows with no caption text.
+    /// </summary>
+    private static bool ShouldIncludeUntitledWindow(IntPtr hwnd)
+    {
+        var exStyle = NativeMethods.GetWindowLongW(hwnd, NativeMethods.GWL_EXSTYLE);
+        if ((exStyle & NativeMethods.WS_EX_APPWINDOW) != 0)
+            return true;
+
+        if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0)
+            return false;
+
+        return NativeMethods.GetWindow(hwnd, NativeMethods.GW_OWNER) == IntPtr.Zero;
+    }
+
+    private static string BuildFallbackTitle(string? processName, string? processPath)
+    {
+        if (!string.IsNullOrWhiteSpace(processPath))
+            return Path.GetFileNameWithoutExtension(processPath);
+        if (!string.IsNullOrWhiteSpace(processName))
+            return processName.Trim();
+        return "Untitled";
     }
 
     private static string? TryGetBestAumidForWindow(IntPtr hwnd)
