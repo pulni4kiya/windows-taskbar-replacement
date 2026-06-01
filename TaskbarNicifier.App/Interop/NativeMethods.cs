@@ -28,6 +28,7 @@ internal static class NativeMethods
     internal const int SW_SHOW = 5;
     internal const int SW_MINIMIZE = 6;
 
+    internal const int WM_EXITSIZEMOVE = 0x0232;
     internal const int WM_NCHITTEST = 0x0084;
     internal const int WM_MOUSEACTIVATE = 0x0021;
     internal const uint WM_CLOSE = 0x0010;

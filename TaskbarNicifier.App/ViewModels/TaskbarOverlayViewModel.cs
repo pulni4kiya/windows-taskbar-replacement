@@ -23,7 +23,6 @@ namespace TaskbarNicifier.App.ViewModels;
 public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 {
     private readonly DispatcherTimer _refreshTimer;
-    private readonly DispatcherTimer _persistDebounceTimer;
     private readonly WindowEnumerator _windowEnumerator = new();
     private readonly IconProvider _iconProvider = new();
     private readonly TaskbarPlacementService _taskbarPlacement = new();
@@ -221,16 +220,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             Interval = TimeSpan.FromMilliseconds(GetClampedRefreshIntervalMs(_shared.RefreshIntervalMs)),
         };
         _refreshTimer.Tick += (_, _) => Refresh();
-
-        _persistDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(600),
-        };
-        _persistDebounceTimer.Tick += (_, _) =>
-        {
-            _persistDebounceTimer.Stop();
-            PersistIntegratedBoundsIfNeeded();
-        };
 
         _shared.PropertyChanged += _sharedPropertyChangedHandler;
 
@@ -949,9 +938,15 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         var pinnedTop = ClampIntegratedTopToTaskbarMonitorBottom(_window.Height);
         if (Math.Abs(_window.Top - pinnedTop) > 0.5)
             _window.Top = pinnedTop;
+    }
 
-        _persistDebounceTimer.Stop();
-        _persistDebounceTimer.Start();
+    /// <summary>Persists integrated bounds after the user finishes edge-resizing (WM_EXITSIZEMOVE).</summary>
+    internal void NotifyUserFinishedIntegratedResize()
+    {
+        if (_window is null || Mode != OverlayMode.Integrated || _shared.LockPosition)
+            return;
+
+        PersistIntegratedBoundsIfNeeded();
     }
 
     private bool TryApplySavedIntegratedBounds(Interop.NativeMethods.RECT taskbarRect)

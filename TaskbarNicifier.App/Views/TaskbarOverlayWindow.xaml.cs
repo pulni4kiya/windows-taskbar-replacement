@@ -475,6 +475,12 @@ public partial class TaskbarOverlayWindow : Window
             }
         }
 
+        if (msg == NativeMethods.WM_EXITSIZEMOVE)
+        {
+            if (DataContext is TaskbarOverlayViewModel vm)
+                vm.NotifyUserFinishedIntegratedResize();
+        }
+
         return IntPtr.Zero;
     }
 
