@@ -688,7 +688,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         GroupingOrderOperations.DeduplicateKeysAcrossGroups(gs);
 
         var liveByKey = liveWindows
-            .GroupBy(w => AppIdentity.GetAppKey(w))
+            .GroupBy(w => AppIdentity.GetAppKey(w), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 g => g.Key,
                 g => g.OrderByDescending(x => x.Title, StringComparer.OrdinalIgnoreCase).ToList(),
