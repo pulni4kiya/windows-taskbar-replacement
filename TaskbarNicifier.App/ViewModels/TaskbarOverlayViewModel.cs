@@ -1061,10 +1061,11 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             return;
         }
 
-        var isFullscreenHere =
-            _fullscreenDetector.TryGetForegroundFullscreenMonitor(out var fullscreenMonitor) &&
-            fullscreenMonitor != IntPtr.Zero &&
-            fullscreenMonitor == _target.MonitorHandle;
+        var overlayHwnd = new WindowInteropHelper(_window).Handle;
+        var isFullscreenHere = _fullscreenDetector.ShouldHideTaskbarOnMonitor(
+            _target.MonitorHandle,
+            overlayHwnd,
+            _target.TaskbarHwnd);
 
         var desiredVisibility = isFullscreenHere ? Visibility.Hidden : Visibility.Visible;
         if (_window.Visibility != desiredVisibility)
