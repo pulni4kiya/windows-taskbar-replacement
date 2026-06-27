@@ -1,13 +1,17 @@
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using ImageSource = System.Windows.Media.ImageSource;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
 
 namespace TaskbarNicifier.App.ViewModels;
 
-public sealed class AppSlotViewModel
+public sealed class AppSlotViewModel : INotifyPropertyChanged
 {
+    private ImageSource? _icon;
+
     public AppSlotViewModel(
         string appKey,
         string displayName,
@@ -26,7 +30,7 @@ public sealed class AppSlotViewModel
         AppKey = appKey;
         DisplayName = displayName;
         Windows = windows;
-        Icon = icon;
+        _icon = icon;
         ParentGroupId = parentGroupId;
         CanMoveGroupLeft = canMoveGroupLeft;
         CanMoveGroupRight = canMoveGroupRight;
@@ -41,7 +45,19 @@ public sealed class AppSlotViewModel
     public string AppKey { get; }
     public string DisplayName { get; }
     public IReadOnlyList<AppWindowItem> Windows { get; }
-    public ImageSource? Icon { get; }
+    public ImageSource? Icon
+    {
+        get => _icon;
+        private set
+        {
+            if (ReferenceEquals(_icon, value))
+                return;
+
+            _icon = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string ParentGroupId { get; }
     public bool CanMoveGroupLeft { get; }
     public bool CanMoveGroupRight { get; }
@@ -51,6 +67,13 @@ public sealed class AppSlotViewModel
     public bool IsRunning { get; }
     public bool CanPinOrUnpin { get; }
     public PinnedAppSettings? PinnedSettings { get; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void SetIcon(ImageSource? icon)
+    {
+        Icon = icon;
+    }
 
     /// <summary>True when more than one window is grouped into this slot (instance picker case).</summary>
     public bool HasMultipleInstances => Windows.Count > 1;
@@ -74,4 +97,7 @@ public sealed class AppSlotViewModel
             return string.Join("\n", Windows.Select(w => w.Title));
         }
     }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

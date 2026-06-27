@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using TaskbarNicifier.App.Interop;
 
 namespace TaskbarNicifier.App.Shell;
@@ -6,6 +7,33 @@ namespace TaskbarNicifier.App.Shell;
 public static class WindowActivator
 {
     public static void FocusWindow(IntPtr hwnd)
+        => RunSafe(() => FocusWindowCore(hwnd));
+
+    public static void MinimizeWindow(IntPtr hwnd)
+        => RunSafe(() => MinimizeWindowCore(hwnd));
+
+    public static void CloseWindow(IntPtr hwnd)
+        => RunSafe(() => CloseWindowCore(hwnd));
+
+    public static void ActivateOrMinimizeIfForeground(IntPtr hwnd)
+        => RunSafe(() => ActivateOrMinimizeIfForegroundCore(hwnd));
+
+    private static void RunSafe(Action action)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch
+            {
+                // Window activation is best-effort; a frozen target must not block the overlay UI.
+            }
+        });
+    }
+
+    private static void FocusWindowCore(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
             return;
@@ -17,7 +45,7 @@ public static class WindowActivator
         NativeMethods.SetForegroundWindow(hwnd);
     }
 
-    public static void MinimizeWindow(IntPtr hwnd)
+    private static void MinimizeWindowCore(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
             return;
@@ -25,7 +53,7 @@ public static class WindowActivator
         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_MINIMIZE);
     }
 
-    public static void CloseWindow(IntPtr hwnd)
+    private static void CloseWindowCore(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
             return;
@@ -33,7 +61,7 @@ public static class WindowActivator
         NativeMethods.PostMessageW(hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
     }
 
-    public static void ActivateOrMinimizeIfForeground(IntPtr hwnd)
+    private static void ActivateOrMinimizeIfForegroundCore(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
             return;
@@ -41,7 +69,7 @@ public static class WindowActivator
         var fg = NativeMethods.GetForegroundWindow();
         if (fg == IntPtr.Zero)
         {
-            FocusWindow(hwnd);
+            FocusWindowCore(hwnd);
             return;
         }
 
@@ -54,11 +82,11 @@ public static class WindowActivator
 
         if (fgRoot == targetRoot)
         {
-            MinimizeWindow(hwnd);
+            MinimizeWindowCore(hwnd);
             return;
         }
 
-        FocusWindow(hwnd);
+        FocusWindowCore(hwnd);
     }
 }
 

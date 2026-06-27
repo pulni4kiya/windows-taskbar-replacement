@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Linq;
 using Brush = System.Windows.Media.Brush;
 using DrawingGroup = System.Windows.Media.DrawingGroup;
@@ -13,7 +16,7 @@ using TaskbarNicifier.App.Settings;
 
 namespace TaskbarNicifier.App.ViewModels;
 
-public sealed class UserGroupViewModel
+public sealed class UserGroupViewModel : INotifyPropertyChanged
 {
     private static readonly ImageSource HiddenGroupIcon = CreateHiddenGroupIcon();
 
@@ -33,6 +36,10 @@ public sealed class UserGroupViewModel
         CanMoveLeft = canMoveLeft;
         CanMoveRight = canMoveRight;
         CanDeleteGroup = canDeleteGroup;
+
+        Slots.CollectionChanged += OnSlotsCollectionChanged;
+        foreach (var slot in Slots)
+            slot.PropertyChanged += OnSlotPropertyChanged;
     }
 
     public UserTaskbarGroupSettings Settings { get; }
@@ -56,6 +63,34 @@ public sealed class UserGroupViewModel
     /// <summary>True when the collapsed chip should show an instance count (multiple windows in the group).</summary>
     public bool HasMultipleWindowsForCollapsedBadge => TotalOpenWindowsInGroup > 1;
 
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnSlotsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (AppSlotViewModel slot in e.OldItems)
+                slot.PropertyChanged -= OnSlotPropertyChanged;
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (AppSlotViewModel slot in e.NewItems)
+                slot.PropertyChanged += OnSlotPropertyChanged;
+        }
+
+        OnPropertyChanged(nameof(CollapsedIcon));
+        OnPropertyChanged(nameof(CollapsedIconUsePinnedOpacity));
+        OnPropertyChanged(nameof(TotalOpenWindowsInGroup));
+        OnPropertyChanged(nameof(HasMultipleWindowsForCollapsedBadge));
+    }
+
+    private void OnSlotPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AppSlotViewModel.Icon))
+            OnPropertyChanged(nameof(CollapsedIcon));
+    }
+
     private static ImageSource CreateHiddenGroupIcon()
     {
         var white = new SolidColorBrush(System.Windows.Media.Color.FromArgb(220, 255, 255, 255));
@@ -73,4 +108,7 @@ public sealed class UserGroupViewModel
         image.Freeze();
         return image;
     }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

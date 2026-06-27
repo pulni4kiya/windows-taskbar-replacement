@@ -77,6 +77,7 @@ internal sealed class OverlayWindowManager
     private void RefreshDisplayTopology()
     {
         var desired = GetDesiredTargets();
+
         if (desired.Count == 0)
             return;
 

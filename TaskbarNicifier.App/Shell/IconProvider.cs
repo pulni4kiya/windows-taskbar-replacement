@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -13,6 +14,32 @@ namespace TaskbarNicifier.App.Shell;
 
 public sealed class IconProvider
 {
+    public Task<ImageSource?> TryGetIconForWindowsAsync(IReadOnlyList<AppWindowItem> windows)
+        => Task.Run(() =>
+        {
+            try
+            {
+                return TryGetIconForWindows(windows);
+            }
+            catch
+            {
+                return null;
+            }
+        });
+
+    public Task<ImageSource> TryGetIconForPinnedAppAsync(PinnedAppSettings pin)
+        => Task.Run(() =>
+        {
+            try
+            {
+                return TryGetIconForPinnedApp(pin);
+            }
+            catch
+            {
+                return CreateGenericPinnedAppIcon();
+            }
+        });
+
     public ImageSource? TryGetIconForWindows(IReadOnlyList<AppWindowItem> windows)
     {
         if (windows.Count == 0)
@@ -297,7 +324,7 @@ public sealed class IconProvider
         // Prefer large icons first for better scaling quality.
         foreach (var kind in new[] { NativeMethods.ICON_BIG, NativeMethods.ICON_SMALL2, NativeMethods.ICON_SMALL })
         {
-            var hIcon = NativeMethods.SendMessageW(hwnd, NativeMethods.WM_GETICON, new IntPtr(kind), IntPtr.Zero);
+            var hIcon = SendGetIconMessage(hwnd, kind);
             if (hIcon != IntPtr.Zero)
                 return CreateImageSourceFromHIcon(hIcon);
         }
@@ -312,6 +339,20 @@ public sealed class IconProvider
             return CreateImageSourceFromHIcon(classSmall);
 
         return null;
+    }
+
+    private static IntPtr SendGetIconMessage(IntPtr hwnd, int iconKind)
+    {
+        var sendResult = NativeMethods.SendMessageTimeoutW(
+            hwnd,
+            NativeMethods.WM_GETICON,
+            new IntPtr(iconKind),
+            IntPtr.Zero,
+            NativeMethods.SMTO_ABORTIFHUNG | NativeMethods.SMTO_BLOCK,
+            50,
+            out var hIcon);
+
+        return sendResult == IntPtr.Zero ? IntPtr.Zero : hIcon;
     }
 
     private static ImageSource? TryGetIconFromFile(string path)

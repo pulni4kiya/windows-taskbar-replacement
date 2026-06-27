@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
@@ -28,6 +29,7 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     private readonly TaskbarPlacementService _taskbarPlacement = new();
     private readonly FullscreenDetector _fullscreenDetector = new();
     private readonly VirtualDesktopService _virtualDesktopService = new();
+    private readonly Dictionary<string, ImageSource> _iconCacheByAppKey = new(StringComparer.OrdinalIgnoreCase);
     private TaskbarTarget _target;
     private readonly OverlaySharedSettingsViewModel _shared;
     private readonly Action<TaskbarOverlayViewModel>? _registerViewModel;
@@ -745,12 +747,6 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     if (isPinned && pin is not null && wins.Count > 0)
                         UpdatePinnedMetadataFromWindow(pin, PickRepresentativeWindow(wins));
 
-                    ImageSource? icon;
-                    if (wins.Count > 0)
-                        icon = _iconProvider.TryGetIconForWindows(wins);
-                    else
-                        icon = _iconProvider.TryGetIconForPinnedApp(pin!);
-
                     var isFlashing = wins.Count > 0 && _attentionHwnds.Count > 0 &&
                                      wins.Any(w => _attentionHwnds.Contains(w.Hwnd));
                     var canMoveGroupLeft = isLeftSide
@@ -771,11 +767,13 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     var canDeleteParentGroup = !string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal) &&
                                                !string.Equals(ug.Id, gs.DefaultGroupId, StringComparison.Ordinal);
 
-                    slots.Add(new AppSlotViewModel(
+                    _iconCacheByAppKey.TryGetValue(key, out var cachedIcon);
+
+                    var slot = new AppSlotViewModel(
                         appKey: key,
                         displayName: displayName,
                         windows: wins,
-                        icon: icon,
+                        icon: cachedIcon,
                         parentGroupId: ug.Id,
                         canMoveGroupLeft: canMoveGroupLeft,
                         canMoveGroupRight: canMoveGroupRight,
@@ -784,7 +782,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                         isPinned: isPinned,
                         isRunning: wins.Count > 0,
                         canPinOrUnpin: canPinOrUnpin,
-                        pinnedSettings: pin));
+                        pinnedSettings: pin);
+                    slots.Add(slot);
+
+                    _ = LoadSlotIconAsync(
+                        slot,
+                        key,
+                        wins.ToList(),
+                        pin);
                 }
 
                 var isHiddenGroup = string.Equals(ug.Id, gs.HiddenGroupId, StringComparison.Ordinal);
@@ -822,6 +827,32 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         AddSide(LeftStripGroups, leftSettings, isLeftSide: true);
         AddSide(RightStripGroups, rightSettings, isLeftSide: false);
+    }
+
+    private async Task LoadSlotIconAsync(
+        AppSlotViewModel slot,
+        string appKey,
+        IReadOnlyList<AppWindowItem> windows,
+        PinnedAppSettings? pin)
+    {
+        try
+        {
+            ImageSource? icon = windows.Count > 0
+                ? await _iconProvider.TryGetIconForWindowsAsync(windows)
+                : pin is not null
+                    ? await _iconProvider.TryGetIconForPinnedAppAsync(pin)
+                    : null;
+
+            if (icon is null)
+                return;
+
+            _iconCacheByAppKey[appKey] = icon;
+            slot.SetIcon(icon);
+        }
+        catch
+        {
+            // Icon extraction is best-effort and must not affect taskbar refresh.
+        }
     }
 
     private static string? FindGroupIdContainingApp(GroupingSettings g, string appKey)

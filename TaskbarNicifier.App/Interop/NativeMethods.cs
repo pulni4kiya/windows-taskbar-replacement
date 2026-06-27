@@ -49,6 +49,8 @@ internal static class NativeMethods
     internal const int ICON_SMALL2 = 2;
     internal const int ICON_SMALL = 0;
     internal const int ICON_BIG = 1;
+    internal const uint SMTO_ABORTIFHUNG = 0x0002;
+    internal const uint SMTO_BLOCK = 0x0001;
 
     internal const int CLASS_LONG_INDEX_GCLP_HICON = -14;
     internal const int CLASS_LONG_INDEX_GCLP_HICONSM = -34;
@@ -195,6 +197,16 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr SendMessageTimeoutW(
+        IntPtr hWnd,
+        uint msg,
+        IntPtr wParam,
+        IntPtr lParam,
+        uint fuFlags,
+        uint uTimeout,
+        out IntPtr lpdwResult);
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
