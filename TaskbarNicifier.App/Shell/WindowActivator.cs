@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using TaskbarNicifier.App.Interop;
 
@@ -17,6 +20,9 @@ public static class WindowActivator
 
     public static void ActivateOrMinimizeIfForeground(IntPtr hwnd)
         => RunSafe(() => ActivateOrMinimizeIfForegroundCore(hwnd));
+
+    public static void KillProcesses(IEnumerable<int> processIds)
+        => RunSafe(() => KillProcessesCore(processIds));
 
     private static void RunSafe(Action action)
     {
@@ -59,6 +65,25 @@ public static class WindowActivator
             return;
 
         NativeMethods.PostMessageW(hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    private static void KillProcessesCore(IEnumerable<int> processIds)
+    {
+        foreach (var pid in processIds.Distinct())
+        {
+            if (pid <= 0)
+                continue;
+
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                process.Kill();
+            }
+            catch
+            {
+                // Best-effort termination; protected or already-exited processes are ignored.
+            }
+        }
     }
 
     private static void ActivateOrMinimizeIfForegroundCore(IntPtr hwnd)

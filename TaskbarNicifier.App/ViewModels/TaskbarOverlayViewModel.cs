@@ -95,6 +95,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand MoveGroupRightCommand { get; }
     public RelayCommand PinAppCommand { get; }
     public RelayCommand UnpinAppCommand { get; }
+    public RelayCommand CloseAllAppWindowsCommand { get; }
+    public RelayCommand ForceKillAllAppWindowsCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -213,6 +215,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
         PinAppCommand = new RelayCommand(p => PinApp(p));
         UnpinAppCommand = new RelayCommand(p => UnpinApp(p));
+        CloseAllAppWindowsCommand = new RelayCommand(p => CloseAllAppWindows(p));
+        ForceKillAllAppWindowsCommand = new RelayCommand(p => ForceKillAllAppWindows(p));
 
         ApplyAppModeToOverlayMode();
         _appliedAppMode = _settings.AppMode;
@@ -1480,6 +1484,55 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _localStripRevision++;
             Refresh();
         }
+    }
+
+    private void CloseAllAppWindows(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot || !slot.IsRunning || slot.Windows.Count == 0)
+            return;
+
+        foreach (var window in slot.Windows)
+            WindowActivator.CloseWindow(window.Hwnd);
+
+        ClearAttentionForSlot(slot);
+        ScheduleRefreshAfterWindowClose();
+    }
+
+    private void ForceKillAllAppWindows(object? parameter)
+    {
+        if (parameter is not AppSlotViewModel slot || !slot.IsRunning || slot.Windows.Count == 0)
+            return;
+
+        var result = MessageBox.Show(
+            $"Force kill all windows for {slot.DisplayName}? Unsaved work may be lost.",
+            "Force kill all",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        var processIds = slot.Windows
+            .SelectMany(w => w.IdentityProcessId is int identityPid
+                ? new[] { identityPid, w.ProcessId }
+                : new[] { w.ProcessId })
+            .Where(pid => pid > 0)
+            .Distinct()
+            .ToList();
+
+        WindowActivator.KillProcesses(processIds);
+        ClearAttentionForSlot(slot);
+        ScheduleRefreshAfterWindowClose();
+    }
+
+    private void ScheduleRefreshAfterWindowClose()
+    {
+        if (_window is null)
+            return;
+
+        _window.Dispatcher.BeginInvoke(
+            () => Refresh(),
+            DispatcherPriority.Background);
     }
 
     private void HideApp(object? parameter)

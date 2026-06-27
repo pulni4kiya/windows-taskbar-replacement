@@ -269,6 +269,34 @@
                                                         </Style>
                                                     </MenuItem.Style>
                                                 </MenuItem>
+                                                <MenuItem Header="Close all"
+                                                          Command="{Binding DataContext.CloseAllAppWindowsCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <MenuItem Header="Force kill all"
+                                                          Command="{Binding DataContext.ForceKillAllAppWindowsCommand, Source={x:Reference RootWindow}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
                                                 <Separator />
                                                 <MenuItem Header="Move group left"
                                                           Command="{Binding DataContext.MoveGroupLeftCommand, Source={x:Reference RootWindow}}"
