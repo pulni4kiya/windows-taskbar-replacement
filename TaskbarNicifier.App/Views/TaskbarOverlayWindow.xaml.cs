@@ -15,8 +15,6 @@ public partial class TaskbarOverlayWindow : Window
     private HwndSource? _source;
     private uint _shellHookMsg;
     private bool _shellHookRegistered;
-    private IntPtr _mouseHook;
-    private readonly NativeMethods.LowLevelMouseProc _mouseHookProc;
     private System.ComponentModel.INotifyPropertyChanged? _vmNotify;
 
     private AppSlotViewModel? _pendingAppDragSlot;
@@ -36,7 +34,6 @@ public partial class TaskbarOverlayWindow : Window
     public TaskbarOverlayWindow()
     {
         InitializeComponent();
-        _mouseHookProc = LowLevelMouseHookProc;
 
         _dragHoverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
         {
@@ -50,7 +47,7 @@ public partial class TaskbarOverlayWindow : Window
             _source?.AddHook(WndProc);
 
             TryRegisterShellHook();
-            TryInstallMouseHook();
+            OverlayMouseHookHub.Register(this);
 
             if (DataContext is TaskbarOverlayViewModel vm)
             {
@@ -69,7 +66,7 @@ public partial class TaskbarOverlayWindow : Window
             _source = null;
 
             TryDeregisterShellHook();
-            TryUninstallMouseHook();
+            OverlayMouseHookHub.Unregister(this);
 
             if (DataContext is TaskbarOverlayViewModel vm)
             {
@@ -484,33 +481,28 @@ public partial class TaskbarOverlayWindow : Window
         return IntPtr.Zero;
     }
 
-    private IntPtr LowLevelMouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    internal bool IsScreenPointInsideOverlayChrome(Point screenPoint)
+        => IsScreenPointInside(this, screenPoint);
+
+    internal bool IsScreenPointInsideSettingsPopup(Point screenPoint)
+        => IsScreenPointInside(SettingsPopupRoot, screenPoint);
+
+    internal bool IsScreenPointInsideGroupSettingsPopup(Point screenPoint)
+        => IsScreenPointInside(GroupSettingsPopupRoot, screenPoint);
+
+    internal bool IsScreenPointInsideCurrentProcessWindow(Point screenPoint)
     {
-        if (nCode >= 0
-            && DataContext is TaskbarOverlayViewModel { HasDismissiblePopupOpen: true } vm
-            && IsMouseButtonDownMessage(wParam.ToInt32()))
+        var hwnd = NativeMethods.WindowFromPoint(new NativeMethods.POINT
         {
-            var info = System.Runtime.InteropServices.Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
-            var p = new Point(info.pt.X, info.pt.Y);
-            var insideOverlay = IsScreenPointInside(this, p);
-            var insideSettingsPopup = IsScreenPointInside(SettingsPopupRoot, p);
-            var insideGroupSettingsPopup = IsScreenPointInside(GroupSettingsPopupRoot, p);
-            var insideGeneratedPopup = vm.IsScreenPointInsideGeneratedPopup(p);
-            var insideCurrentProcessPopup = IsScreenPointInsideCurrentProcessWindow(p);
+            X = (int)Math.Round(screenPoint.X),
+            Y = (int)Math.Round(screenPoint.Y),
+        });
+        if (hwnd == IntPtr.Zero)
+            return false;
 
-            if (!insideOverlay
-                && !insideSettingsPopup
-                && !insideGroupSettingsPopup
-                && !insideGeneratedPopup
-                && !insideCurrentProcessPopup)
-                vm.CloseActivePopups();
-        }
-
-        return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+        _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+        return processId == Environment.ProcessId;
     }
-
-    private static bool IsMouseButtonDownMessage(int msg)
-        => msg is NativeMethods.WM_LBUTTONDOWN or NativeMethods.WM_RBUTTONDOWN or NativeMethods.WM_MBUTTONDOWN;
 
     private static bool IsScreenPointInside(FrameworkElement element, Point screenPoint)
     {
@@ -529,20 +521,6 @@ public partial class TaskbarOverlayWindow : Window
         }
     }
 
-    private static bool IsScreenPointInsideCurrentProcessWindow(Point screenPoint)
-    {
-        var hwnd = NativeMethods.WindowFromPoint(new NativeMethods.POINT
-        {
-            X = (int)Math.Round(screenPoint.X),
-            Y = (int)Math.Round(screenPoint.Y),
-        });
-        if (hwnd == IntPtr.Zero)
-            return false;
-
-        _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
-        return processId == Environment.ProcessId;
-    }
-
     private void TryRegisterShellHook()
     {
         if (_shellHookRegistered)
@@ -556,23 +534,6 @@ public partial class TaskbarOverlayWindow : Window
             return;
 
         _shellHookRegistered = NativeMethods.RegisterShellHookWindow(_source.Handle);
-    }
-
-    private void TryInstallMouseHook()
-    {
-        if (_mouseHook != IntPtr.Zero)
-            return;
-
-        _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, _mouseHookProc, IntPtr.Zero, 0);
-    }
-
-    private void TryUninstallMouseHook()
-    {
-        if (_mouseHook == IntPtr.Zero)
-            return;
-
-        NativeMethods.UnhookWindowsHookEx(_mouseHook);
-        _mouseHook = IntPtr.Zero;
     }
 
     private void TryDeregisterShellHook()

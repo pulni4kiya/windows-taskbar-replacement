@@ -20,6 +20,7 @@
         ResizeMode="CanResize"
         Background="Transparent"
         AllowsTransparency="True"
+        ShowInTaskbar="False"
         Deactivated="RootWindow_Deactivated"
         PreviewMouseDown="RootWindow_PreviewMouseDown"
         PreviewMouseMove="RootWindow_PreviewMouseMove"

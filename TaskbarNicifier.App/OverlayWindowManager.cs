@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
+using System.Windows.Markup;
 using System.Windows.Threading;
 using TaskbarNicifier.App.Settings;
 using TaskbarNicifier.App.Shell;
@@ -31,7 +33,7 @@ internal sealed class OverlayWindowManager
         _shared = new OverlaySharedSettingsViewModel(
             _settings,
             _settingsService,
-            ReconcileWindows,
+            () => ReconcileWindows(),
             RefreshAllOverlays);
 
         _displayTopologyDebounceTimer = new DispatcherTimer(DispatcherPriority.Normal)
@@ -69,17 +71,22 @@ internal sealed class OverlayWindowManager
         _displayTopologyDebounceTimer.Start();
     }
 
-    public void ReconcileWindows() => RefreshDisplayTopology();
+    public void ReconcileWindows(Action? onCompleted = null) => RefreshDisplayTopology(onCompleted);
+
+    public int VisibleOverlayCount => _windowsByMonitorKey.Count;
 
     /// <summary>
     /// Updates monitor handles on existing overlays and creates missing ones — no window teardown.
     /// </summary>
-    private void RefreshDisplayTopology()
+    private void RefreshDisplayTopology(Action? onCompleted = null)
     {
         var desired = GetDesiredTargets();
 
         if (desired.Count == 0)
+        {
+            onCompleted?.Invoke();
             return;
+        }
 
         var desiredKeys = desired.Select(t => t.MonitorKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -91,6 +98,7 @@ internal sealed class OverlayWindowManager
             CloseOverlayWindow(existingKey);
         }
 
+        var toCreate = new List<TaskbarTarget>();
         foreach (var t in desired)
         {
             if (_windowsByMonitorKey.TryGetValue(t.MonitorKey, out var existing)
@@ -102,10 +110,41 @@ internal sealed class OverlayWindowManager
                 continue;
             }
 
-            CreateAndShowOverlay(t);
+            toCreate.Add(t);
         }
 
-        RefreshAllOverlays();
+        if (toCreate.Count == 0)
+        {
+            RefreshAllOverlays();
+            onCompleted?.Invoke();
+            return;
+        }
+
+        CreateOverlaysStaggered(toCreate, index: 0, onCompleted);
+    }
+
+    private void CreateOverlaysStaggered(IReadOnlyList<TaskbarTarget> targets, int index, Action? onCompleted)
+    {
+        if (index >= targets.Count)
+        {
+            RefreshAllOverlays();
+            onCompleted?.Invoke();
+            return;
+        }
+
+        CreateAndShowOverlay(targets[index], attempt: 0, () =>
+        {
+            if (index + 1 < targets.Count)
+            {
+                Application.Current.Dispatcher.BeginInvoke(
+                    () => CreateOverlaysStaggered(targets, index + 1, onCompleted),
+                    DispatcherPriority.ApplicationIdle);
+                return;
+            }
+
+            RefreshAllOverlays();
+            onCompleted?.Invoke();
+        });
     }
 
     private IReadOnlyList<TaskbarTarget> GetDesiredTargets()
@@ -139,22 +178,71 @@ internal sealed class OverlayWindowManager
         }
     }
 
-    private void CreateAndShowOverlay(TaskbarTarget t)
+    private void CreateAndShowOverlay(TaskbarTarget t, int attempt, Action? onComplete)
     {
         var vm = new TaskbarOverlayViewModel(
             target: t,
             shared: _shared,
             registerViewModel: RegisterViewModel,
             unregisterViewModel: UnregisterViewModel);
-        var w = new TaskbarOverlayWindow
+
+        TaskbarOverlayWindow w;
+        try
         {
-            DataContext = vm,
-        };
+            w = new TaskbarOverlayWindow
+            {
+                DataContext = vm,
+            };
+        }
+        catch (Exception ex) when (ex is XamlParseException or Win32Exception)
+        {
+            if (attempt < 2)
+            {
+                Application.Current.Dispatcher.BeginInvoke(
+                    () => CreateAndShowOverlay(t, attempt + 1, onComplete),
+                    DispatcherPriority.ApplicationIdle);
+            }
+            else
+            {
+                onComplete?.Invoke();
+            }
+
+            return;
+        }
 
         w.Closed += OnOverlayWindowClosed;
 
         _windowsByMonitorKey[t.MonitorKey] = w;
-        w.Show();
+
+        try
+        {
+            w.Show();
+            onComplete?.Invoke();
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 8)
+        {
+            w.Closed -= OnOverlayWindowClosed;
+            _windowsByMonitorKey.Remove(t.MonitorKey);
+            try
+            {
+                w.Close();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (attempt < 2)
+            {
+                Application.Current.Dispatcher.BeginInvoke(
+                    () => CreateAndShowOverlay(t, attempt + 1, onComplete),
+                    DispatcherPriority.ApplicationIdle);
+            }
+            else
+            {
+                onComplete?.Invoke();
+            }
+        }
     }
 
     private void OnOverlayWindowClosed(object? sender, EventArgs e)

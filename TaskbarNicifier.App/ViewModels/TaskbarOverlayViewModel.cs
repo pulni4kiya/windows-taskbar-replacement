@@ -910,15 +910,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         if (_window is null)
             return;
 
-        var taskbarRect = GetTaskbarRectForTargetOrFallback();
-
-        if (Mode == OverlayMode.Integrated)
+        try
         {
-            _window.ShowInTaskbar = false;
-            _window.Topmost = true;
+            var taskbarRect = GetTaskbarRectForTargetOrFallback();
 
-            if (true)
+            if (Mode == OverlayMode.Integrated)
             {
+                _window.Topmost = true;
+
                 if (!TryApplySavedIntegratedBounds(taskbarRect))
                 {
                     var desiredHeight = (int)Math.Round(_window.Height);
@@ -934,31 +933,34 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
                     _window.Top = ClampIntegratedTopToTaskbarMonitorBottom(b.Height);
                 }
             }
+            else
+            {
+                _window.Topmost = false;
+
+                if (previousMode == OverlayMode.Integrated)
+                {
+                    var monitor = _target.MonitorInfo.rcMonitor;
+                    var monitorMidY = monitor.Top + (monitor.Bottom - monitor.Top) / 2;
+                    var isBottomTaskbar = taskbarRect.Top > monitorMidY;
+
+                    var newLeft = _window.Left;
+                    var newTop = isBottomTaskbar
+                        ? taskbarRect.Top - _window.Height - StandaloneGapFromTaskbarPx
+                        : taskbarRect.Bottom + StandaloneGapFromTaskbarPx;
+
+                    _window.Left = Math.Max(monitor.Left, newLeft);
+                    _window.Top = newTop;
+                }
+                else if (_window.Left == 0 && _window.Top == 0)
+                {
+                    _window.Left = 200;
+                    _window.Top = 200;
+                }
+            }
         }
-        else
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 8)
         {
-            _window.ShowInTaskbar = true;
-            _window.Topmost = false;
-
-            if (previousMode == OverlayMode.Integrated)
-            {
-                var monitor = _target.MonitorInfo.rcMonitor;
-                var monitorMidY = monitor.Top + (monitor.Bottom - monitor.Top) / 2;
-                var isBottomTaskbar = taskbarRect.Top > monitorMidY;
-
-                var newLeft = _window.Left;
-                var newTop = isBottomTaskbar
-                    ? taskbarRect.Top - _window.Height - StandaloneGapFromTaskbarPx
-                    : taskbarRect.Bottom + StandaloneGapFromTaskbarPx;
-
-                _window.Left = Math.Max(monitor.Left, newLeft);
-                _window.Top = newTop;
-            }
-            else if (_window.Left == 0 && _window.Top == 0)
-            {
-                _window.Left = 200;
-                _window.Top = 200;
-            }
+            // HWND quota exhausted; keep overlay running with current settings.
         }
     }
 
@@ -1432,7 +1434,14 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
             _groupPopup.IsOpen = false;
         };
 
-        _groupPopup.IsOpen = true;
+        try
+        {
+            _groupPopup.IsOpen = true;
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 8)
+        {
+            _groupPopup = null;
+        }
     }
 
     public void OnShellWindowFlash(IntPtr hwnd)
