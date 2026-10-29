@@ -91,6 +91,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
     public RelayCommand CloseGroupSettingsCommand { get; }
     public RelayCommand DeleteGroupCommand { get; }
     public RelayCommand CreateGroupCommand { get; }
+    public RelayCommand OpenTaskManagerCommand { get; }
+    public RelayCommand TurnOffScreensCommand { get; }
     public RelayCommand MoveGroupLeftCommand { get; }
     public RelayCommand MoveGroupRightCommand { get; }
     public RelayCommand PinAppCommand { get; }
@@ -211,6 +213,8 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
         CloseGroupSettingsCommand = new RelayCommand(_ => CloseGroupSettings());
         DeleteGroupCommand = new RelayCommand(p => DeleteGroup(p));
         CreateGroupCommand = new RelayCommand(_ => _shared.AddUserStripGroupCommand.Execute(null));
+        OpenTaskManagerCommand = new RelayCommand(_ => OpenTaskManager());
+        TurnOffScreensCommand = new RelayCommand(_ => TurnOffScreens());
         MoveGroupLeftCommand = new RelayCommand(p => MoveGroupLeft(p));
         MoveGroupRightCommand = new RelayCommand(p => MoveGroupRight(p));
         PinAppCommand = new RelayCommand(p => PinApp(p));
@@ -1145,6 +1149,31 @@ public sealed class TaskbarOverlayViewModel : INotifyPropertyChanged
 
         if (slot.PinnedSettings is not null)
             _ = TryLaunchPinnedApp(slot.PinnedSettings);
+    }
+
+    private static void OpenTaskManager()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("taskmgr.exe")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Ignore launch failures (missing binary, policy, etc.).
+        }
+    }
+
+    private static void TurnOffScreens()
+    {
+        // Broadcast SC_MONITORPOWER with lParam=2 to power off all displays.
+        NativeMethods.PostMessageW(
+            NativeMethods.HWND_BROADCAST,
+            NativeMethods.WM_SYSCOMMAND,
+            new IntPtr(NativeMethods.SC_MONITORPOWER),
+            new IntPtr(2));
     }
 
     private static bool TryLaunchNewInstance(AppWindowItem item)

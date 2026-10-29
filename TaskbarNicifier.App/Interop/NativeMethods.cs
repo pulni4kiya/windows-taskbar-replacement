@@ -32,9 +32,14 @@ internal static class NativeMethods
     internal const int WM_NCHITTEST = 0x0084;
     internal const int WM_MOUSEACTIVATE = 0x0021;
     internal const uint WM_CLOSE = 0x0010;
+    internal const uint WM_SYSCOMMAND = 0x0112;
     internal const int WM_LBUTTONDOWN = 0x0201;
     internal const int WM_RBUTTONDOWN = 0x0204;
     internal const int WM_MBUTTONDOWN = 0x0207;
+
+    // SC_MONITORPOWER: lParam 1 = low power, 2 = off
+    internal const int SC_MONITORPOWER = 0xF170;
+    internal static readonly IntPtr HWND_BROADCAST = new(0xFFFF);
     internal const int MA_NOACTIVATE = 3;
     internal const int WH_MOUSE_LL = 14;
 

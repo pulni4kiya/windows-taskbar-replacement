@@ -806,6 +806,11 @@
                                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                         <MenuItem Header="Create group"
                                                   Command="{Binding CreateGroupCommand}" />
+                                        <Separator />
+                                        <MenuItem Header="Task Manager"
+                                                  Command="{Binding OpenTaskManagerCommand}" />
+                                        <MenuItem Header="Turn off screen(s)"
+                                                  Command="{Binding TurnOffScreensCommand}" />
                                     </ContextMenu>
                                 </Border.ContextMenu>
                             </Border>
